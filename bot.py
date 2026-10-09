@@ -10,12 +10,6 @@ bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 USER_BOTS = {}            
 WAITING_FOR_TOKEN = set() 
 RUNNING_SUB_BOTS = {}     
-ACTIVATED_CHATS = set()   
-WELCOME_SETTINGS = {}     
-DEV_SECONDARY = set()     
-CREATORS = set()          
-ID_PHOTO_SETTINGS = {}    
-LOCKED_CHATS = set()      
 
 MAKER_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("صنع بوت فرعي جديد 🤖", callback_data="create_bot")],
@@ -56,9 +50,7 @@ CAT_QUESTIONS = [
     "هل تحب تسوي مقالب بالناس؟ 🎭", "شنو أكتر شي يخليك تفقد الأمل وترجع تعتمده؟ 🔄", "شنو أكتر صفة توارثتها من أهلك؟ 🧬",
     "لو كالو لك تكدر تطير لساعة وحدة، وين تطير؟ 🦅", "شنو أكتر شي يخليك تحس بالأمان؟ 🏡", "هل تكدر تقاوم النوم والسهر؟ 🌙",
     "شنو أكتر كلمة تقال الك وتفرحك؟ 💌", "اذا انطوك كتاب حياتك وتقرأ صفحة النهاية، تقراها لو تخاف؟ 📖", "شنو رأيك بالناس اللي تحكي من ورا ضهرك؟ 🗣️",
-    "شنو أكتر موقف حسيت بيه بالفخر؟ 🦅", "ختاماً، كلمة توجها لنفسك اليوم؟ 🖤",
-    "شنو أحلى موقف رومنسي مريت بي بحياتك؟ ✨", "لو كل شخص بالعالم يسمعك جملة، شتكولهم؟ 🌍",
-    "شنو أكتر طبخة تحب تاكلها وهي ساخنة؟ 🍲", "لو انطوك فرصة تعيش بعصر غير عصرنا، تختار يا عصر؟ ⏳"
+    "شنو أكتر موقف حسيت بيه بالفخر؟ 🦅", "ختاماً، كلمة توجها لنفسك اليوم؟ 🖤"
 ]
 
 ID_STYLES = [
@@ -67,35 +59,190 @@ ID_STYLES = [
     "🚀 ─── • ⦗ هويتك بالكروب ⦘ • ─── 🚀", "👑 ───── ❖ ⦗ بطاقة الملوك ⦘ ───── 👑", "💫 ━━━ ≪ كرت التعريف الخاص ≫ ━━━ 💫",
     "⚜️ ─── • [ ايدي سجين ] • ─── ⚜️", "🔹 ════════ ≪ هويتك ≫ ════════ 🔹", "🌠 ───── ❖ ⦗ بطاقتك ⦘ ───── 🌠",
     "🎯 ─── • ⦗ ايدي الفخم ⦘ • ─── 🎯", "🔮 ═════ ≪ كرت العضو ≫ ═════ 🔮", "⚡ ───── ❖ ⦗ الهوية ⦘ ───── ⚡",
-    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ⚓",
+    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ───── ⚓",
     "🌙 ─── • [ كرت الهوية ] • ─── 🌙", "🔥 ═════ ≪ هويتك الأسطورية ≫ ═════ 🔥"
 ]
 
 def run_sub_bot(token):
     try:
         sub_bot = telebot.TeleBot(token, parse_mode="Markdown")
-        
+        activated_chats = set()
+        welcome_settings = {}
+        id_photo_settings = {}
+
         @sub_bot.message_handler(commands=['start'])
         def sub_start(msg):
-            sub_bot.reply_to(msg, "⚡ **أهلاً بك في بوت الحماية الفرعي التابع لسورس سجين.**\nأضفني إلى مجموعتك وارفعني مشرف لتفعيل الحماية الكاملة 🖤")
+            if msg.chat.type == 'private':
+                sub_bot.reply_to(msg, "⚡ **أهلاً بك في بوت الحماية الفرعي التابع لسورس سجين.**\nأضفني إلى مجموعتك وارفعني مشرف لتفعيل الحماية الكاملة 🖤")
 
         @sub_bot.message_handler(content_types=['new_chat_members'])
         def sub_welcome(msg):
-            for n in msg.new_chat_members:
-                sub_bot.send_message(msg.chat.id, f"هلا بيك يا وردة 🌸 [{n.first_name}](tg://user?id={n.id})\nنورت الكروب بوجودك ⚡🖤")
+            chat_id = msg.chat.id
+            if chat_id in activated_chats and welcome_settings.get(chat_id, True):
+                for n in msg.new_chat_members:
+                    sub_bot.send_message(chat_id, f"هلا بيك يا وردة 🌸 [{n.first_name}](tg://user?id={n.id})\nنورت الكروب بوجودك ⚡🖤")
 
-        @sub_bot.message_handler(func=lambda m: True)
-        def sub_commands(msg):
-            txt = msg.text if msg.text else ""
-            if txt in ["ا", "ايدي"]:
+        @sub_bot.message_handler(func=lambda msg: msg.chat.type in ['group', 'supergroup'])
+        def sub_group_handler(msg):
+            chat_id = msg.chat.id
+            text = msg.text if msg.text else ""
+            user = msg.from_user
+            user_id = user.id
+            user_name = user.first_name
+
+            is_main_dev = (user.username == "M_C_67")
+            is_admin = False
+            is_chat_creator = False
+            try:
+                member = sub_bot.get_chat_member(chat_id, user_id)
+                if member.status in ['creator', 'administrator']:
+                    is_admin = True
+                    if member.status == 'creator':
+                        is_chat_creator = True
+            except Exception:
+                pass
+
+            if is_main_dev:
+                is_admin = True
+
+            if text == "تفعيل":
+                if is_admin or is_chat_creator:
+                    activated_chats.add(chat_id)
+                    sub_bot.reply_to(msg, "✅ **تم تفعيل المجموعة بنجاح وحماية سجين تعمل بكامل طاقتها ⚡**")
+                else:
+                    sub_bot.reply_to(msg, "⚠️ أمر التفعيل مخصص للمدراء والمشرفين فقط!")
+                return
+
+            if chat_id not in activated_chats:
+                return
+
+            if text == "تفع":
+                if is_admin:
+                    id_photo_settings[chat_id] = True
+                    sub_bot.reply_to(msg, "🖼️ **تم تفعيل عرض الصورة الشخصية في الأيدي بنجاح!** ⚡")
+                return
+            elif text == "تعط":
+                if is_admin:
+                    id_photo_settings[chat_id] = False
+                    sub_bot.reply_to(msg, "📝 **تم تعطيل عرض الصورة في الأيدي بنجاح!** ⚡")
+                return
+
+            if text == "تعطيل":
+                if is_admin or is_chat_creator:
+                    if chat_id in activated_chats:
+                        activated_chats.remove(chat_id)
+                    sub_bot.reply_to(msg, "❌ **تم تعطيل البوت في هذه المجموعة!**")
+                return
+
+            if text in ["الأوامر", "اوامر", "ترتيب الاوامر", "قائمة الأوامر"]:
+                commands_text = (
+                    "📋 **قائمة أوامر سورس سجين الشاملة:**\n\n"
+                    "👤 **أوامر الأعضاء:**\n"
+                    "• `ا` أو `ايدي` - عرض ايديك الفخم\n"
+                    "• `تغ` أو `تغير` - تغيير ستايل الايدي\n"
+                    "• `ر` أو `رابط` - جلب رابط الكروب\n"
+                    "• `كت` - أسئلة كت ترفيهية\n"
+                    "• `يوت [كلمة]` - بحث يوتيوب سريع\n\n"
+                    "🛠️ **أوامر المدراء:**\n"
+                    "• `تفعيل` / `تعطيل`\n"
+                    "• `تفع` / `تعط` (صورة الايدي)\n"
+                    "• `تفعيل الترحيب` / `تعطيل الترحيب`\n"
+                    "• `طرد` / `كتم` / `تقييد` (بالرد)\n"
+                    "• `قفل الدردشة` / `فتح الدردشة`"
+                )
+                sub_bot.reply_to(msg, commands_text)
+                return
+
+            if text in ["ا", "ايدي"]:
                 style = random.choice(ID_STYLES)
-                sub_bot.reply_to(msg, f"{style}\n\n👤 اسمك: {msg.from_user.first_name}\n🆔 ايديك: `{msg.from_user.id}`")
-            elif txt == "كت":
+                rank_title = "المطور الأساسي 👑" if is_main_dev else ("منشئ 🛡️" if is_chat_creator else ("مشرف ⚡" if is_admin else "عضو مميز 🖤"))
+                caption = f"{style}\n\n👤 اسمك: {user_name}\n🆔 ايديك: `{user_id}`\n🔰 رتبتك: {rank_title}"
+                
+                photo_enabled = id_photo_settings.get(chat_id, True)
+                if photo_enabled:
+                    try:
+                        photos = sub_bot.get_user_profile_photos(user_id, limit=1)
+                        if photos.total_count > 0:
+                            sub_bot.send_photo(chat_id, photos.photos[0][0].file_id, caption=caption, reply_to_message_id=msg.message_id)
+                            return
+                    except Exception:
+                        pass
+                sub_bot.reply_to(msg, caption)
+                return
+
+            if text in ["تغ", "تغيير"]:
+                style = random.choice(ID_STYLES)
+                sub_bot.reply_to(msg, f"🎨 **تم تغيير ستايل الايدي بنجاح:**\n\n{style}")
+                return
+
+            if text == "تفعيل الترحيب" and is_admin:
+                welcome_settings[chat_id] = True
+                sub_bot.reply_to(msg, "✅ **تم تفعيل الترحيب في هذا الكروب!**")
+                return
+            elif text == "تعطيل الترحيب" and is_admin:
+                welcome_settings[chat_id] = False
+                sub_bot.reply_to(msg, "❌ **تم تعطيل الترحيب في هذا الكروب!**")
+                return
+
+            if text in ["ر", "رابط"]:
+                try:
+                    chat_link = sub_bot.export_chat_invite_link(chat_id)
+                    sub_bot.reply_to(msg, f"🔗 **رابط الكروب:**\n{chat_link}")
+                except Exception:
+                    sub_bot.reply_to(msg, "⚠️ تأكد من رفعي مشرف بصلاحية إضافة أعضاء لجلب الرابط.")
+                return
+
+            if text == "قفل الدردشة" and is_admin:
+                try:
+                    sub_bot.set_chat_permissions(chat_id, ChatPermissions(can_send_messages=False))
+                    sub_bot.reply_to(msg, "🔒 **تم قفل الدردشة بنجاح!**")
+                except Exception:
+                    pass
+                return
+
+            if text == "فتح الدردشة" and is_admin:
+                try:
+                    sub_bot.set_chat_permissions(chat_id, ChatPermissions(can_send_messages=True, can_send_media_messages=True))
+                    sub_bot.reply_to(msg, "🔓 **تم فتح الدردشة بنجاح!**")
+                except Exception:
+                    pass
+                return
+
+            if text == "كت":
                 sub_bot.reply_to(msg, f"❓ **سؤال كت:**\n\n{random.choice(CAT_QUESTIONS)}")
-            elif txt.startswith("يوت"):
-                q = txt.replace("يوت", "", 1).strip()
-                if q:
-                    sub_bot.reply_to(msg, f"🔍 **نتائج بحث اليوتيوب:**\nhttps://www.youtube.com/results?search_query={q.replace(' ', '+')}")
+                return
+
+            if text.startswith("يوت"):
+                query = text.replace("يوت", "", 1).strip()
+                if query:
+                    sub_bot.reply_to(msg, f"🔍 **نتائج بحث اليوتيوب:**\nhttps://www.youtube.com/results?search_query={query.replace(' ', '+')}")
+                return
+
+            if text in ["طرد", "كتم", "تقييد"] and is_admin:
+                if msg.reply_to_message:
+                    target_user = msg.reply_to_message.from_user
+                    try:
+                        target_member = sub_bot.get_chat_member(chat_id, target_user.id)
+                        if target_member.status in ['creator', 'administrator'] or target_user.username == "M_C_67":
+                            sub_bot.reply_to(msg, "❌ **لا يمكنني تنفيذ أي إجراء بحق شخص يمتلك رتبة محمية!** 🛡️")
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        if text == "طرد":
+                            sub_bot.ban_chat_member(chat_id, target_user.id)
+                            sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
+                        elif text == "كتم":
+                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
+                            sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
+                        elif text == "تقييد":
+                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
+                            sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
+                    except Exception:
+                        sub_bot.reply_to(msg, "❌ تأكد أني مشرف وصلاحياتي كاملة لتنفيذ الإجراء.")
+                else:
+                    sub_bot.reply_to(msg, "⚠️ رد على رسالة الشخص المراد تنفيذه لتطبيق الأمر!")
+                return
 
         sub_bot.infinity_polling(skip_pending=True)
     except Exception:
@@ -138,7 +285,6 @@ def receive_token_handler(msg):
             "bot_token": text
         })
         
-        # تشغيل البوت الفرعي حقيقةً بخيط منفصل (Thread)
         if text not in RUNNING_SUB_BOTS:
             t = threading.Thread(target=run_sub_bot, args=(text,), daemon=True)
             t.start()
@@ -155,7 +301,7 @@ def receive_token_handler(msg):
             f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح حقيقي!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"البوت يعمل الآن بصورة مستقلة ويستقبل الأوامر والكروبات.",
+            f"البوت يعمل الآن بكافة أوامر الحماية والترفيه.",
             reply_markup=success_markup
         )
     except Exception:
