@@ -60,7 +60,7 @@ ID_STYLES = [
     "🚀 ─── • ⦗ هويتك بالكروب ⦘ • ─── 🚀", "👑 ───── ❖ ⦗ بطاقة الملوك ⦘ ───── 👑", "💫 ━━━ ≪ كرت التعريف الخاص ≫ ━━━ 💫",
     "⚜️ ─── • [ ايدي سجين ] • ─── ⚜️", "🔹 ════════ ≪ هويتك ≫ ════════ 🔹", "🌠 ───── ❖ ⦗ بطاقتك ⦘ ───── 🌠",
     "🎯 ─── • ⦗ ايدي الفخم ⦘ • ─── 🎯", "🔮 ═════ ≪ كرت العضو ≫ ═════ 🔮", "⚡ ───── ❖ ⦗ الهوية ⦘ ───── ⚡",
-    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ───── ⚓",
+    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ⚓",
     "🌙 ─── • [ كرت الهوية ] • ─── 🌙", "🔥 ═════ ≪ هويتك الأسطورية ≫ ═════ 🔥"
 ]
 
@@ -190,8 +190,12 @@ def run_sub_bot(token):
                     for n in msg.new_chat_members:
                         sub_bot.send_message(chat_id, f"هلا بيك يا بعد روحي 🌸 [{n.first_name}](tg://user?id={n.id})\nنورت الكروب بوجودك يا عطرها ⚡🖤")
 
-            @sub_bot.message_handler(content_types=['text'], func=lambda msg: msg.chat.type in ['group', 'supergroup'])
+            # --- المعالج الشامل المباشر وبدون أي فلاتر تعيق الـ Reply ---
+            @sub_bot.message_handler(content_types=['text'])
             def sub_group_handler(msg):
+                if msg.chat.type not in ['group', 'supergroup']:
+                    return
+
                 chat_id = msg.chat.id
                 text = msg.text.strip() if msg.text else ""
                 user = msg.from_user
@@ -224,9 +228,9 @@ def run_sub_bot(token):
                 if chat_id not in activated_chats:
                     return
 
-                # --- المعالجة الصارمة للردود (الهمسة، الكتم، الطرد، التقيد) لضمان عدم ضياع الـ Reply ---
+                # --- معالجة الهمسة بالتأكد التام من وجود reply_to_message ---
                 if text in ["همسه", "همسة"]:
-                    if msg.reply_to_message and msg.reply_to_message.from_user:
+                    if msg.reply_to_message is not None and msg.reply_to_message.from_user is not None:
                         target_user = msg.reply_to_message.from_user
                         if target_user.id == me.id:
                             sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة للبوت!")
@@ -251,9 +255,10 @@ def run_sub_bot(token):
                         sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة العضو المراد اهماسه بكلمة (همسة)!")
                     return
 
+                # --- معالجة الكتم، الطرد، التقيد بالتأكد التام من وجود الرد ---
                 if text.startswith("طرد") or text.startswith("كتم") or text.startswith("تقييد"):
                     if is_admin:
-                        if msg.reply_to_message and msg.reply_to_message.from_user:
+                        if msg.reply_to_message is not None and msg.reply_to_message.from_user is not None:
                             target_user = msg.reply_to_message.from_user
                             try:
                                 target_member = sub_bot.get_chat_member(chat_id, target_user.id)
