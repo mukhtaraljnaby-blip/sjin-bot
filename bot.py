@@ -13,6 +13,9 @@ WELCOME_SETTINGS = {}
 DEV_SECONDARY = set()     
 CREATORS = set()          
 ID_PHOTO_SETTINGS = {}    
+LOCKED_CHATS = set()      
+MUTE_LIST = {}            
+BAN_LIST = {}             
 
 MAKER_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("صنع بوت فرعي جديد 🤖", callback_data="create_bot")],
@@ -20,7 +23,6 @@ MAKER_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("مطور المصنع 👤", url="https://t.me/M_C_67")]
 ])
 
-# أكثر من 100 سؤال كت مرتبة لعيونك
 CAT_QUESTIONS = [
     "شنو أكثر شي تحبه بصديقك المقرب؟ 🖤", "لو انطوك مليار دولار، شنو أول شغلة تشتريها؟ 💸", "كلمة توجها لشخص خان ثقتك؟ 🎭",
     "شنو أحلى صفة بشخصيتك وأسوأ صفة؟ 🤔", "لو رجع بيك الزمن للماضي، شنو الشغلة اللي تغيرها؟ ⏳", "أكثر موقف محرج صار وياك بحياتك شنو هو؟ 😅",
@@ -54,7 +56,9 @@ CAT_QUESTIONS = [
     "هل تحب تسوي مقالب بالناس؟ 🎭", "شنو أكتر شي يخليك تفقد الأمل وترجع تعتمده؟ 🔄", "شنو أكتر صفة توارثتها من أهلك؟ 🧬",
     "لو كالو لك تكدر تطير لساعة وحدة، وين تطير؟ 🦅", "شنو أكتر شي يخليك تحس بالأمان؟ 🏡", "هل تكدر تقاوم النوم والسهر؟ 🌙",
     "شنو أكتر كلمة تقال الك وتفرحك؟ 💌", "اذا انطوك كتاب حياتك وتقرأ صفحة النهاية، تقراها لو تخاف؟ 📖", "شنو رأيك بالناس اللي تحكي من ورا ضهرك؟ 🗣️",
-    "شنو أكتر موقف حسيت بيه بالفخر؟ 🦅", "ختاماً، كلمة توجها لنفسك اليوم؟ 🖤"
+    "شنو أكتر موقف حسيت بيه بالفخر؟ 🦅", "ختاماً، كلمة توجها لنفسك اليوم؟ 🖤",
+    "شنو أحلى موقف رومنسي مريت بي بحياتك؟ ✨", "لو كل شخص بالعالم يسمعك جملة، شتكولهم؟ 🌍",
+    "شنو أكتر طبخة تحب تاكلها وهي ساخنة؟ 🍲", "لو انطوك فرصة تعيش بعصر غير عصرنا، تختار يا عصر؟ ⏳"
 ]
 
 ID_STYLES = [
@@ -81,48 +85,50 @@ def start_handler(msg):
         )
         bot.send_message(msg.chat.id, start_text, reply_markup=MAKER_KEYBOARD)
 
-@bot.message_handler(func=lambda msg: msg.chat.type == 'private')
-def private_messages_handler(msg):
+@bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user.id in WAITING_FOR_TOKEN)
+def receive_token_handler(msg):
     user_id = msg.from_user.id
-    text = msg.text if msg.text else ""
+    text = msg.text.strip() if msg.text else ""
 
-    if user_id in WAITING_FOR_TOKEN:
-        if text.startswith('/'):
-            bot.reply_to(msg, "⚠️ يرجى إرسال توكن صالح للبوت أو اضغط /start للإلغاء.")
-            return
-
-        try:
-            test_bot = telebot.TeleBot(text.strip())
-            bot_info = test_bot.get_me()
-            bot_username = f"@{bot_info.username}"
-            
-            if user_id not in USER_BOTS:
-                USER_BOTS[user_id] = []
-
-            USER_BOTS[user_id].append({
-                "bot_name": bot_info.first_name,
-                "bot_username": bot_username,
-                "bot_token": text.strip()
-            })
-            
-            WAITING_FOR_TOKEN.remove(user_id)
-            
-            success_markup = InlineKeyboardMarkup([
-                [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
-                [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
-            ])
-            bot.send_message(
-                msg.chat.id,
-                f"✅ **تم صنع وربط البوت الفرعي بنجاح!**\n\n"
-                f"🤖 **يوزر البوت:** {bot_username}\n"
-                f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-                f"الإصدار مضاف الآن داخل قائمة بوتاتك.",
-                reply_markup=success_markup
-            )
-        except Exception:
-            bot.reply_to(msg, "❌ **التوكن غير صحيح أو منتهي الصلاحية!**\nتأكد من توكن البوت المرسل من `@BotFather` وأعد إرساله مجدداً.")
+    if text.startswith('/'):
+        bot.reply_to(msg, "⚠️ يرجى إرسال توكن صالح للبوت أو اضغط /start للإلغاء.")
         return
 
+    try:
+        test_bot = telebot.TeleBot(text)
+        bot_info = test_bot.get_me()
+        bot_username = f"@{bot_info.username}"
+        
+        if user_id not in USER_BOTS:
+            USER_BOTS[user_id] = []
+
+        USER_BOTS[user_id].append({
+            "bot_name": bot_info.first_name,
+            "bot_username": bot_username,
+            "bot_token": text
+        })
+        
+        WAITING_FOR_TOKEN.remove(user_id)
+        
+        success_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
+            [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
+        ])
+        bot.send_message(
+            msg.chat.id,
+            f"✅ **تم صنع وربط البوت الفرعي بنجاح!**\n\n"
+            f"🤖 **يوزر البوت:** {bot_username}\n"
+            f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
+            f"الإصدار مضاف الآن داخل قائمة بوتاتك.",
+            reply_markup=success_markup
+        )
+    except Exception:
+        bot.reply_to(msg, "❌ **التوكن غير صحيح أو منتهي الصلاحية!**\nتأكد من توكن البوت المرسل من `@BotFather` وأعد إرساله مجدداً.")
+
+@bot.message_handler(func=lambda msg: msg.chat.type == 'private')
+def private_admin_commands(msg):
+    user_id = msg.from_user.id
+    text = msg.text if msg.text else ""
     is_main_dev = (msg.from_user.username == "M_C_67")
     if is_main_dev:
         if text.startswith("اذاعة "):
@@ -190,4 +196,194 @@ def group_messages_handler(msg):
             ID_PHOTO_SETTINGS[chat_id] = False
             bot.reply_to(msg, "📝 **تم تعطيل عرض الصورة في الأيدي (إرسال معلومات نصية) بنجاح!** ⚡")
         else:
-            bot.reply_to(msg, "⚠️ هذا الأمر خاص بالمدراء والم
+            bot.reply_to(msg, "⚠️ هذا الأمر خاص بالمدراء والمشرفين!")
+        return
+
+    if text == "تعطيل":
+        if is_admin or is_chat_creator:
+            if chat_id in ACTIVATED_CHATS:
+                ACTIVATED_CHATS.remove(chat_id)
+            bot.reply_to(msg, "❌ **تم تعطيل البوت في هذه المجموعة!**")
+        else:
+            bot.reply_to(msg, "⚠️ أمر التعطيل مخصص للمدراء والمشرفين فقط!")
+        return
+
+    if text in ["الأوامر", "اوامر", "ترتيب الاوامر", "قائمة الأوامر"]:
+        commands_text = (
+            "📋 **قائمة أوامر سورس سجين الشاملة:**\n\n"
+            "👤 **أوامر الأعضاء:**\n"
+            "• `ا` أو `ايدي` - عرض ايديك (مع/بدون صورة)\n"
+            "• `تغ` أو `تغير` - تغيير ستايل الايدي الفخم\n"
+            "• `ر` أو `رابط` - جلب رابط الكروب الرسمي\n"
+            "• `كت` - أكثر من 100 سؤال كت ترفيهي عشوائي\n"
+            "• `يوت [كلمة]` - بحث سريع في يوتيوب\n\n"
+            "🛠️ **أوامر المدراء والمشرفين:**\n"
+            "• `تفعيل` / `تعطيل` - تشغيل أو إيقاف الحماية\n"
+            "• `تفع` / `تعط` - تفعيل أو تعطيل صورة الايدي\n"
+            "• `تفعيل الترحيب` / `تعطيل الترحيب`\n"
+            "• `طرد` / `كتم` / `تقييد` (بالرد - محمي ضد الرتب)\n"
+            "• `قفل الدردشة` / `فتح الدردشة`"
+        )
+        bot.reply_to(msg, commands_text)
+        return
+
+    if text == "ا" or text.lower() == "ايدي":
+        style = random.choice(ID_STYLES)
+        rank_title = "المطور الأساسي 👑" if is_main_dev else ("منشئ 🛡️" if is_creator or is_chat_creator else ("مدير / مشرف ⚡" if is_admin else "عضو مميز 🖤"))
+        caption = f"{style}\n\n👤 اسمك: {user_name}\n🆔 ايديك: `{user_id}`\n🔰 رتبتك: {rank_title}"
+        
+        photo_enabled = ID_PHOTO_SETTINGS.get(chat_id, True)
+        if photo_enabled:
+            try:
+                photos = bot.get_user_profile_photos(user_id, limit=1)
+                if photos.total_count > 0:
+                    bot.send_photo(chat_id, photos.photos[0][0].file_id, caption=caption, reply_to_message_id=msg.message_id)
+                    return
+            except Exception:
+                pass
+        bot.reply_to(msg, caption)
+        return
+
+    if text in ["تغ", "تغيير"]:
+        style = random.choice(ID_STYLES)
+        bot.reply_to(msg, f"🎨 **تم تغيير ستايل الايدي بنجاح:**\n\n{style}")
+        return
+
+    if text == "تفعيل الترحيب" and is_admin:
+        WELCOME_SETTINGS[chat_id] = True
+        bot.reply_to(msg, "✅ **تم تفعيل الترحيب في هذا الكروب!**")
+        return
+    elif text == "تعطيل الترحيب" and is_admin:
+        WELCOME_SETTINGS[chat_id] = False
+        bot.reply_to(msg, "❌ **تم تعطيل الترحيب في هذا الكروب!**")
+        return
+
+    if text in ["ر", "رابط"]:
+        try:
+            chat_link = bot.export_chat_invite_link(chat_id)
+            bot.reply_to(msg, f"🔗 **رابط الكروب:**\n{chat_link}")
+        except Exception:
+            bot.reply_to(msg, "⚠️ تأكد من رفعي مشرف بصلاحية إضافة أعضاء لجلب الرابط.")
+        return
+
+    if text == "قفل الدردشة" and is_admin:
+        try:
+            bot.set_chat_permissions(chat_id, ChatPermissions(can_send_messages=False))
+            bot.reply_to(msg, "🔒 **تم قفل الدردشة بنجاح!**")
+        except Exception:
+            pass
+        return
+
+    if text == "فتح الدردشة" and is_admin:
+        try:
+            bot.set_chat_permissions(chat_id, ChatPermissions(can_send_messages=True, can_send_media_messages=True))
+            bot.reply_to(msg, "🔓 **تم فتح الدردشة بنجاح!**")
+        except Exception:
+            pass
+        return
+
+    if text == "كت":
+        bot.reply_to(msg, f"❓ **سؤال كت:**\n\n{random.choice(CAT_QUESTIONS)}")
+        return
+
+    if text.startswith("يوت"):
+        query = text.replace("يوت", "", 1).strip()
+        if query:
+            bot.reply_to(msg, f"🔍 **نتائج بحث اليوتيوب:**\nhttps://www.youtube.com/results?search_query={query.replace(' ', '+')}")
+        return
+
+    if text in ["طرد", "كتم", "تقييد"] and is_admin:
+        if msg.reply_to_message:
+            target_user = msg.reply_to_message.from_user
+            try:
+                target_member = bot.get_chat_member(chat_id, target_user.id)
+                if target_member.status in ['creator', 'administrator'] or target_user.username == "M_C_67":
+                    bot.reply_to(msg, "❌ **لا يمكنني تنفيذ أي إجراء بحق شخص يمتلك رتبة محمية!** 🛡️")
+                    return
+            except Exception:
+                pass
+            try:
+                if text == "طرد":
+                    bot.ban_chat_member(chat_id, target_user.id)
+                    bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
+                elif text == "كتم":
+                    bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
+                    bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
+                elif text == "تقييد":
+                    bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
+                    bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
+            except Exception:
+                bot.reply_to(msg, "❌ تأكد أني مشرف وصلاحياتي كاملة لتنفيذ الإجراء.")
+        else:
+            bot.reply_to(msg, "⚠️ رد على رسالة الشخص المراد تنفيده لتطبيق الأمر!")
+        return
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handlers(call):
+    user_id = call.from_user.id
+    bot.answer_callback_query(call.id)
+    
+    if call.data == "create_bot":
+        user_bots_list = USER_BOTS.get(user_id, [])
+        if len(user_bots_list) >= 3:
+            vip_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("تواصل لتفعيل VIP 💎", url="https://t.me/M_C_67")],
+                [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
+            ])
+            bot.edit_message_text(
+                "❌ **عذراً، لقد وصلت إلى الحد الأقصى (3 بوتات فرعية)!**\n\n💎 لتجاوز الحد وتفعيل **بوت VIP**، تواصل مع المطور:\n👤 @M_C_67",
+                call.message.chat.id, call.message.message_id, reply_markup=vip_markup
+            )
+        else:
+            WAITING_FOR_TOKEN.add(user_id)
+            cancel_markup = InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء 🔙", callback_data="back_start")]])
+            bot.edit_message_text(
+                "⚙️ **خطوات صنع بوت فرعي جديد:**\n\n"
+                "1️⃣ اذهب إلى بوت الإنشاء الرسمي `@BotFather` وقم بإنشاء بوت جديد.\n"
+                "2️⃣ انسخ (Token) البوت الذي حصلت عليه.\n"
+                "3️⃣ **قم بإرسال التوكن هنا في الشات الآن لربطه وفحص يوزره.**",
+                call.message.chat.id, call.message.message_id,
+                reply_markup=cancel_markup
+            )
+
+    elif call.data == "my_bots":
+        user_bots_list = USER_BOTS.get(user_id, [])
+        if not user_bots_list:
+            bot.edit_message_text(
+                "📂 **قائمة بوتاتك الفرعية:**\n\n❌ ليس لديك أي بوت فرعي مصنوع حالياً!\nاضغط على زر (صنع بوت فرعي جديد) للبدء.",
+                call.message.chat.id, call.message.message_id,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]])
+            )
+        else:
+            text = f"📂 **قائمة بوتاتك الفرعية المصنوعة ({len(user_bots_list)}/3):**\n\n"
+            markup = InlineKeyboardMarkup()
+            for idx, b in enumerate(user_bots_list, 1):
+                text += f"{idx}⌯ البوت: `{b['bot_name']}`\n🔗 اليوزر: {b['bot_username']}\n\n"
+                markup.add(InlineKeyboardButton(f"حذف {b['bot_username']} 🗑️", callback_data=f"delete_bot_{user_id}_{idx-1}"))
+            markup.add(InlineKeyboardButton("رجوع 🔙", callback_data="back_start"))
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+
+    elif call.data == "back_start":
+        if user_id in WAITING_FOR_TOKEN:
+            WAITING_FOR_TOKEN.remove(user_id)
+        bot.edit_message_text(
+            f"⌔︙أهـلا بـك في مصنع بـوتات حماية سجين ⚡\n⌔︙اختر ما تحب من الأزرار بالأسفل 👇",
+            call.message.chat.id, call.message.message_id, reply_markup=MAKER_KEYBOARD
+        )
+
+    elif call.data.startswith("delete_bot_"):
+        parts = call.data.split("_")
+        u_id = int(parts[2])
+        b_idx = int(parts[3])
+        if u_id in USER_BOTS and len(USER_BOTS[u_id]) > b_idx:
+            deleted_bot = USER_BOTS[u_id].pop(b_idx)
+            bot.edit_message_text(
+                f"✅ **تم حذف البوت ({deleted_bot['bot_username']}) بنجاح!**\nتم إزالته من قائمة بوتاتك الفرعية.",
+                call.message.chat.id, call.message.message_id,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
+                    [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
+                ])
+            )
+
+bot.infinity_polling()
