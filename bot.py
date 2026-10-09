@@ -14,8 +14,6 @@ DEV_SECONDARY = set()
 CREATORS = set()          
 ID_PHOTO_SETTINGS = {}    
 LOCKED_CHATS = set()      
-MUTE_LIST = {}            
-BAN_LIST = {}             
 
 MAKER_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("صنع بوت فرعي جديد 🤖", callback_data="create_bot")],
@@ -78,7 +76,7 @@ def start_handler(msg):
             WAITING_FOR_TOKEN.remove(msg.from_user.id)
             
         start_text = (
-            f"⌔︙أهـلا بـك في مصنع بـوتات حماية سجين ⚡\n"
+            f"⌔︙أهـلا بـك في مصنع بـوتات حماية سجين الحقيقي ⚡\n"
             f"⌔︙هذا البوت مخصص لصنع وإدارة بوتات الحماية الفرعية الخاصة بك.\n"
             f"⌔︙الحد الأقصى للبوتات المجانية هو `3 بوتات` فقط.\n"
             f"⌔︙اختر ما تحب من الأزرار بالأسفل للبدء 👇"
@@ -95,6 +93,7 @@ def receive_token_handler(msg):
         return
 
     try:
+        # فحص حقيقي للتوكن عبر تليجرام
         test_bot = telebot.TeleBot(text)
         bot_info = test_bot.get_me()
         bot_username = f"@{bot_info.username}"
@@ -116,14 +115,14 @@ def receive_token_handler(msg):
         ])
         bot.send_message(
             msg.chat.id,
-            f"✅ **تم صنع وربط البوت الفرعي بنجاح!**\n\n"
+            f"✅ **تم التحقق وصنع البوت الحقيقي بنجاح تام!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"الإصدار مضاف الآن داخل قائمة بوتاتك.",
+            f"تمت إضافته بنجاح إلى قائمة بوتاتك الفرعية.",
             reply_markup=success_markup
         )
     except Exception:
-        bot.reply_to(msg, "❌ **التوكن غير صحيح أو منتهي الصلاحية!**\nتأكد من توكن البوت المرسل من `@BotFather` وأعد إرساله مجدداً.")
+        bot.reply_to(msg, "❌ **التوكن غير صحيح أو منتهي الصلاحية!**\nتأكد من توكن البوت الحقيقي المرسل من `@BotFather` وأعد إرساله مجدداً.")
 
 @bot.message_handler(func=lambda msg: msg.chat.type == 'private')
 def private_admin_commands(msg):
@@ -338,10 +337,10 @@ def callback_handlers(call):
             WAITING_FOR_TOKEN.add(user_id)
             cancel_markup = InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء 🔙", callback_data="back_start")]])
             bot.edit_message_text(
-                "⚙️ **خطوات صنع بوت فرعي جديد:**\n\n"
+                "⚙️ **خطوات صنع بوت فرعي حقيقي:**\n\n"
                 "1️⃣ اذهب إلى بوت الإنشاء الرسمي `@BotFather` وقم بإنشاء بوت جديد.\n"
-                "2️⃣ انسخ (Token) البوت الذي حصلت عليه.\n"
-                "3️⃣ **قم بإرسال التوكن هنا في الشات الآن لربطه وفحص يوزره.**",
+                "2️⃣ انسخ (Token) البوت الحقيقي الذي حصلت عليه.\n"
+                "3️⃣ **قم بإرسال التوكن هنا في الشات الآن لنتحقق منه ونربطه.**",
                 call.message.chat.id, call.message.message_id,
                 reply_markup=cancel_markup
             )
@@ -367,7 +366,7 @@ def callback_handlers(call):
         if user_id in WAITING_FOR_TOKEN:
             WAITING_FOR_TOKEN.remove(user_id)
         bot.edit_message_text(
-            f"⌔︙أهـلا بـك في مصنع بـوتات حماية سجين ⚡\n⌔︙اختر ما تحب من الأزرار بالأسفل 👇",
+            f"⌔︙أهـلا بـك في مصنع بـوتات حماية سجين الحقيقي ⚡\n⌔︙اختر ما تحب من الأزرار بالأسفل 👇",
             call.message.chat.id, call.message.message_id, reply_markup=MAKER_KEYBOARD
         )
 
@@ -378,7 +377,7 @@ def callback_handlers(call):
         if u_id in USER_BOTS and len(USER_BOTS[u_id]) > b_idx:
             deleted_bot = USER_BOTS[u_id].pop(b_idx)
             bot.edit_message_text(
-                f"✅ **تم حذف البوت ({deleted_bot['bot_username']}) بنجاح!**\nتم إزالته من قائمة بوتاتك الفرعية.",
+                f"✅ **تم حذف البوت ({deleted_bot['bot_username']}) بنجاح!**\nتم إزالته من قائمة بوتاتك.",
                 call.message.chat.id, call.message.message_id,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
