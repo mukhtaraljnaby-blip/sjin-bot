@@ -2,16 +2,21 @@ import os
 import time
 import random
 import threading
+import tempfile
+import shutil
+from pathlib import Path
 from urllib.parse import quote_plus
 
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions, ReplyKeyboardRemove
 
 # Railway: أضف BOT_TOKEN من Variables ولا تضع التوكن داخل GitHub.
 TOKEN = os.getenv("BOT_TOKEN", "").strip()
 DEV_USERNAME = "M_C_67"
 DEV_LINK = "https://t.me/M_C_67"
 MAX_BOTS = 3
+RANKS = ["عضو", "مميز", "مدير", "ادمن", "منشئ", "منشئ أساسي", "مطور", "مطور ثانوي", "مطور أساسي"]
+RANK_ALIASES = {"مم": "مميز", "م": "مميز", "مد": "مدير", "اد": "ادمن", "أدمن": "ادمن", "من": "منشئ", "اس": "منشئ أساسي", "أس": "منشئ أساسي", "مط": "مطور", "ثانوي": "مطور ثانوي", "اساسي": "مطور أساسي", "أساسي": "مطور أساسي"}
 
 if not TOKEN:
     raise RuntimeError("أضف BOT_TOKEN في Railway → Variables")
@@ -67,6 +72,10 @@ def run_sub_bot(token):
             whisper_sessions = {}
             whisper_store = {}
             settings = {}
+            rename_sessions = {}       # user_id -> {step, old}
+            command_aliases = {}       # chat_id -> {new_name: old_name}
+            sticker_locks = {}
+            gif_locks = {}
 
             def is_dev(user):
                 return bool(user and user.username and user.username.lower() == DEV_USERNAME.lower())
@@ -77,19 +86,29 @@ def run_sub_bot(token):
 
             def rank_of(chat_id, user):
                 if is_dev(user):
-                    return "المطور الأساسي"
+                    return "مطور أساسي"
                 try:
                     member = sb.get_chat_member(chat_id, user.id)
                     if member.status == "creator":
-                        return "مالك"
+                        return "مطور أساسي"
                     if member.status == "administrator":
                         return "مدير"
                 except Exception:
                     pass
                 return ranks.get(chat_id, {}).get(user.id, "عضو")
 
+            def rank_level(rank):
+                try:
+                    return RANKS.index(rank)
+                except ValueError:
+                    return 0
+
+            def can_manage(chat_id, actor, target):
+                ar, tr = rank_of(chat_id, actor), rank_of(chat_id, target)
+                return ar == "مطور أساسي" or rank_level(ar) > rank_level(tr)
+
             def admin(chat_id, user):
-                return rank_of(chat_id, user) in ("المطور الأساسي", "مالك", "مدير")
+                return rank_level(rank_of(chat_id, user)) >= rank_level("مدير")
 
             def target_user(message, parts):
                 target = replied_user(message)
@@ -170,6 +189,26 @@ def run_sub_bot(token):
                     sb.reply_to(msg, "❌ تعذر إرسال الهمسة؛ تأكد أن البوت موجود بالمجموعة.")
                 whisper_sessions.pop(uid, None)
 
+            @sb.callback_query_handler(func=lambda c: c.data.startswith("rankhelp:"))
+            def rank_help(call):
+                key = call.data.split(":", 1)[1]
+                if key.isdigit() and 0 <= int(key) < len(RANKS):
+                    rank = RANKS[int(key)]
+                    level = rank_level(rank)
+                    text_help = (f"🔰 <b>رتبة {rank}</b>\n" +
+                                 ("• الأوامر العامة للأعضاء\n" if level == 0 else "• أوامر الرتب الأدنى بحسب الصلاحيات\n") +
+                                 ("• إدارة الرتب الأدنى\n" if level >= rank_level("مدير") else "") +
+                                 ("• جميع الصلاحيات وإدارة كل الرتب\n" if rank == "مطور أساسي" else "") +
+                                 "• الصلاحيات الفعلية تعتمد على صلاحيات البوت ومشرفيته في تيليگرام.")
+                elif key == "admin":
+                    text_help = "🛡️ أوامر الإدارة: طرد، حظر، كتم، تقييد، إنذار، تثبيت، القوائم والمسح، قفل وفتح الحماية. متاحة للمدير فما فوق."
+                else:
+                    text_help = "👥 أوامر الأعضاء: ايدي، رابط، همسة بالرد، كت، يوت + اسم الأغنية، وأوامر الترفيه والردود العامة."
+                try: sb.answer_callback_query(call.id)
+                except Exception: pass
+                try: sb.send_message(call.message.chat.id, text_help)
+                except Exception: pass
+
             @sb.callback_query_handler(func=lambda c: c.data.startswith("readwhisper:"))
             def read_whisper(call):
                 try:
@@ -182,7 +221,20 @@ def run_sub_bot(token):
                     sb.answer_callback_query(call.id, "هذه الهمسة ليست مخصصة لك.", show_alert=True)
                     return
                 text = whisper_store.get(f"{sender}:{target}:{chat_id}", "انتهت صلاحية الهمسة.")
-                sb.answer_callback_query(call.id, text[:190], show_alert=True)
+                sb.answer_callback_query(call.id, text[:180] + ("…" if len(text) > 180 else ""), show_alert=True)
+
+            @sb.message_handler(content_types=["sticker", "animation"])
+            def filter_stickers_and_gifs(msg):
+                cid = msg.chat.id
+                if msg.chat.type not in ("group", "supergroup") or cid not in activated:
+                    return
+                try:
+                    if msg.content_type == "sticker" and sticker_locks.get(cid, False):
+                        sb.delete_message(cid, msg.message_id)
+                    elif msg.content_type == "animation" and gif_locks.get(cid, False):
+                        sb.delete_message(cid, msg.message_id)
+                except Exception:
+                    pass
 
             @sb.message_handler(content_types=["new_chat_members"])
             def welcome(msg):
@@ -201,6 +253,51 @@ def run_sub_bot(token):
                 parts = text.split()
                 is_admin = admin(cid, user)
 
+                # خطوات إعادة تسمية أمر: المدير فما فوق فقط، والتغيير خاص بهذه المجموعة.
+                if uid in rename_sessions:
+                    session = rename_sessions[uid]
+                    if not admin(cid, user):
+                        rename_sessions.pop(uid, None)
+                        sb.reply_to(msg, "⚠️ تعديل الأوامر للرتبة مدير فما فوق.")
+                        return
+                    if session["step"] == "old":
+                        old_name = text.strip()
+                        known = set(["تفعيل", "تعطيل", "الأوامر", "ايدي", "ا", "تغ", "تغيير", "رابط", "ر", "همسة", "تفعيل الترحيب", "تعطيل الترحيب", "رفع مميز", "مم", "م", "تنزيل مميز", "المميزين", "المكتومين", "المطرودين", "المحظورين", "المقيدين", "مسح المكتومين", "مسح المطرودين", "مسح المحظورين", "مسح المقيدين", "مسح المميزين", "قفل الدردشة", "فتح الدردشة", "قفل الروابط", "فتح الروابط", "قفل الصور", "فتح الصور", "قفل الفيديو", "فتح الفيديو", "قفل الملفات", "فتح الملفات", "قفل التكرار", "فتح التكرار", "قفل التوجيه", "فتح التوجيه", "قفل الملصقات", "فتح الملصقات", "قفل المتحركات", "فتح المتحركات", "تعديل أمر", "طرد", "حظر", "إلغاء حظر", "كتم", "إلغاء كتم", "تقييد", "إلغاء تقييد", "رفع القيود", "إنذار", "تثبيت", "إلغاء التثبيت", "كت", "يوت", "جمالي", "الحب", "الكره", "الرجولة", "الأنوثة", "اقتباس", "شعر", "قرآن"])
+                        # نقبل فقط أمراً معروفاً أو اسماً سبق تخصيصه.
+                        all_names = known | set(command_aliases.get(cid, {}).keys())
+                        if old_name not in all_names:
+                            sb.reply_to(msg, "❌ هذا الأمر مو موجود. أرسل الاسم مثل ما تستخدمه بالضبط، أو اكتب إلغاء.")
+                            if old_name.lower() == "إلغاء": rename_sessions.pop(uid, None)
+                            return
+                        session.update({"step": "new", "old": command_aliases.get(cid, {}).get(old_name, old_name)})
+                        sb.reply_to(msg, "✏️ هسه أرسل الاسم الجديد للأمر.")
+                        return
+                    new_name = text.strip()
+                    if new_name in ("إلغاء", "الغاء"):
+                        rename_sessions.pop(uid, None)
+                        sb.reply_to(msg, "تم إلغاء تعديل الأمر.")
+                        return
+                    if not new_name or len(new_name) > 40 or " " in new_name or new_name.startswith("/"):
+                        sb.reply_to(msg, "❌ الاسم الجديد لازم يكون كلمة واحدة، بدون /، وبحد أقصى 40 حرفاً.")
+                        return
+                    old_name = session["old"]
+                    aliases = command_aliases.setdefault(cid, {})
+                    if new_name in aliases or new_name in ("تعديل", "تعديل أمر", "إلغاء"):
+                        sb.reply_to(msg, "❌ الاسم مستخدم بالفعل، اختار اسم ثاني.")
+                        return
+                    aliases[new_name] = old_name
+                    rename_sessions.pop(uid, None)
+                    sb.reply_to(msg, f"✅ صار الأمر <b>{new_name}</b> ينفّذ وظيفة <b>{old_name}</b> بهذه المجموعة.")
+                    return
+
+                # إذا كتب الاسم البديل، نفّذ نفس الأمر الأصلي، حتى لو تبعته وسائط مثل اسم أغنية.
+                aliases_now = command_aliases.get(cid, {})
+                for alias_name in sorted(aliases_now, key=len, reverse=True):
+                    if text == alias_name or text.startswith(alias_name + " "):
+                        text = aliases_now[alias_name] + text[len(alias_name):]
+                        break
+                parts = text.split()
+
                 if text == "تفعيل":
                     if is_admin:
                         activated.add(cid)
@@ -217,21 +314,34 @@ def run_sub_bot(token):
                     return
 
                 if text in ("الأوامر", "اوامر", "قائمة الأوامر", "ترتيب الاوامر"):
-                    sb.reply_to(msg,
-                        "📋 <b>أوامر سجين</b>\n\n"
-                        "🛡️ <b>الحماية:</b>\nقفل الدردشة / فتح الدردشة\n"
-                        "قفل الروابط / فتح الروابط\nقفل الصور / فتح الصور\n"
-                        "قفل الفيديو / فتح الفيديو\nقفل الملفات / فتح الملفات\n"
-                        "قفل التكرار / فتح التكرار\nقفل التوجيه / فتح التوجيه\n"
-                        "تفعيل الترحيب / تعطيل الترحيب\n\n"
-                        "👑 <b>الرتب:</b>\nرفع مميز أو مم أو م (بالرد)\nتنزيل مميز (بالرد)\n"
-                        "رفع مشرف / تنزيل مشرف (بالرد)\nرفع مدير / تنزيل مدير (بالرد)\n\n"
-                        "🔨 <b>الإدارة:</b>\nطرد / حظر / إلغاء حظر / كتم / إلغاء كتم\n"
-                        "تقييد / إلغاء تقييد / رفع القيود / إنذار (بالرد أو الآيدي)\n"
-                        "تثبيت / إلغاء التثبيت\n\n"
-                        "🧹 <b>القوائم والمسح:</b>\nالمميزين / المكتومين / المطرودين / المحظورين / المقيدين\n"
-                        "مسح المكتومين / مسح المطرودين / مسح المحظورين / مسح المقيدين / مسح المميزين\n\n"
-                        "🎮 <b>الأعضاء:</b>\nايدي أو ا / تغيير أو تغ / رابط أو ر / همسة (بالرد)\nكت / يوت [كلمة] / جمالي / الحب / الكره / الرجولة / الأنوثة / اقتباس / شعر / قرآن")
+                    markup = InlineKeyboardMarkup(row_width=2)
+                    for rank_name in RANKS:
+                        markup.add(InlineKeyboardButton("صلاحيات " + rank_name, callback_data="rankhelp:" + str(RANKS.index(rank_name))))
+                    markup.add(InlineKeyboardButton("أوامر الإدارة", callback_data="rankhelp:admin"), InlineKeyboardButton("أوامر الأعضاء", callback_data="rankhelp:member"))
+                    sb.reply_to(msg, "📋 <b>قائمة أوامر سجين</b>\nاختار رتبة حتى تشوف صلاحياتها.\n\nالرتب الأعلى تقدر تدير الرتب الأدنى، والمطور الأساسي أعلى رتبة.", reply_markup=markup)
+                    return
+
+                if text == "تعديل أمر":
+                    if not admin(cid, user):
+                        sb.reply_to(msg, "⚠️ هذا الأمر للرتبة مدير فما فوق.")
+                        return
+                    rename_sessions[uid] = {"step": "old"}
+                    sb.reply_to(msg, "✏️ أرسل اسم الأمر الموجود الذي تريد تغييره، أو اكتب إلغاء.")
+                    return
+
+                if text in ("قفل الملصقات", "فتح الملصقات", "قفل المتحركات", "فتح المتحركات"):
+                    if not admin(cid, user):
+                        sb.reply_to(msg, "⚠️ هذا الأمر للرتبة مدير فما فوق.")
+                        return
+                    if "الملصقات" in text:
+                        sticker_locks[cid] = text.startswith("قفل")
+                        feature = "الملصقات"
+                        enabled = sticker_locks[cid]
+                    else:
+                        gif_locks[cid] = text.startswith("قفل")
+                        feature = "المتحركات"
+                        enabled = gif_locks[cid]
+                    sb.reply_to(msg, f"✅ تم {'قفل' if enabled else 'فتح'} {feature}.")
                     return
 
                 if text in ("ايدي", "ا", "آيدي", "آيدي العضو"):
@@ -284,11 +394,9 @@ def run_sub_bot(token):
                     return
 
                 # الرتب محلية للبوت ولا ترفع العضو إلى مشرف تيليجرام.
-                rank_cmds = ("رفع مميز", "مم", "م", "تنزيل مميز", "رفع مشرف", "تنزيل مشرف", "رفع مدير", "تنزيل مدير")
-                if text in rank_cmds:
-                    if not is_admin:
-                        sb.reply_to(msg, "⚠️ هذا الأمر للمالك والمدراء فقط.")
-                        return
+                rank_cmds = ("رفع مميز", "مم", "م", "تنزيل مميز", "رفع مدير", "رفع مد", "رفع ادمن", "رفع أدمن", "رفع اد", "رفع منشئ", "رفع من", "رفع منشئ أساسي", "رفع اس", "رفع أس", "رفع مطور", "رفع مط", "رفع مطور ثانوي", "رفع ثانوي", "رفع مطور أساسي", "رفع اساسي", "رفع أساسي", "تنزيل مدير", "تنزيل مد", "تنزيل ادمن", "تنزيل أدمن", "تنزيل اد", "تنزيل منشئ", "تنزيل من", "تنزيل منشئ أساسي", "تنزيل اس", "تنزيل أس", "تنزيل مطور", "تنزيل مط", "تنزيل مطور ثانوي", "تنزيل ثانوي", "تنزيل مطور أساسي", "تنزيل اساسي", "تنزيل أساسي", "تك")
+                matched_rank = next((x for x in sorted(rank_cmds, key=len, reverse=True) if text == x), None)
+                if matched_rank:
                     target = replied_user(msg)
                     if not target:
                         sb.reply_to(msg, "⚠️ رد على رسالة العضو ثم أرسل الأمر.")
@@ -296,17 +404,27 @@ def run_sub_bot(token):
                     if target.id == uid or is_dev(target):
                         sb.reply_to(msg, "⚠️ لا يمكن تغيير رتبة هذا العضو.")
                         return
-                    desired = "مميز" if text in ("رفع مميز", "مم", "م", "تنزيل مميز") else ("مشرف" if "مشرف" in text else "مدير")
-                    removing = text.startswith("تنزيل")
-                    if desired == "مدير" and rank_of(cid, user) not in ("المطور الأساسي", "مالك"):
-                        sb.reply_to(msg, "⚠️ رفع المدير للمالك أو المطور فقط.")
+                    if not can_manage(cid, user, target):
+                        sb.reply_to(msg, "⚠️ لازم رتبتك أعلى من رتبة العضو، والمطور الأساسي يقدر يدير كل الرتب.")
                         return
-                    ranks.setdefault(cid, {})
-                    if removing:
-                        ranks[cid].pop(target.id, None)
-                        sb.reply_to(msg, f"✅ تم تنزيل رتبة {target.first_name}.")
+                    if matched_rank == "تك":
+                        ranks.setdefault(cid, {}).pop(target.id, None)
+                        sb.reply_to(msg, f"✅ تم تنزيل {target.first_name} إلى رتبة عضو.")
+                        return
+                    removing = matched_rank.startswith("تنزيل")
+                    if matched_rank in ("مم", "م", "رفع مميز", "تنزيل مميز"):
+                        desired = "مميز"
                     else:
-                        ranks[cid][target.id] = desired
+                        name = matched_rank.replace("رفع ", "").replace("تنزيل ", "")
+                        desired = RANK_ALIASES.get(name, name)
+                    if desired not in RANKS:
+                        sb.reply_to(msg, "❌ رتبة غير معروفة.")
+                        return
+                    if removing:
+                        ranks.setdefault(cid, {}).pop(target.id, None)
+                        sb.reply_to(msg, f"✅ تم تنزيل {target.first_name} إلى رتبة عضو.")
+                    else:
+                        ranks.setdefault(cid, {})[target.id] = desired
                         sb.reply_to(msg, f"✅ تم رفع {target.first_name} إلى رتبة {desired} داخل البوت.")
                     return
 
@@ -358,7 +476,9 @@ def run_sub_bot(token):
                     "قفل الفيديو": ("videos", True), "فتح الفيديو": ("videos", False),
                     "قفل الملفات": ("documents", True), "فتح الملفات": ("documents", False),
                     "قفل التكرار": ("repeat", True), "فتح التكرار": ("repeat", False),
-                    "قفل التوجيه": ("forward", True), "فتح التوجيه": ("forward", False)
+                    "قفل التوجيه": ("forward", True), "فتح التوجيه": ("forward", False),
+                    "قفل الملصقات": ("stickers", True), "فتح الملصقات": ("stickers", False),
+                    "قفل المتحركات": ("gifs", True), "فتح المتحركات": ("gifs", False)
                 }
                 if text in lock_map:
                     if not is_admin:
@@ -471,9 +591,58 @@ def run_sub_bot(token):
                     return
                 if text.startswith("يوت"):
                     query = text[3:].strip()
-                    if query:
-                        sb.reply_to(msg, "🔎 نتائج يوتيوب:\nhttps://www.youtube.com/results?search_query=" + quote_plus(query))
+                    if not query:
+                        sb.reply_to(msg, "🎵 اكتب اسم الأغنية بعد يوت، مثال: يوت Faded")
+                        return
+                    status = sb.reply_to(msg, f"🔎 دا أبحث عن الصوت: <b>{query}</b>، انتظر شوي…")
+                    workdir = None
+                    try:
+                        import yt_dlp
+                        workdir = tempfile.mkdtemp(prefix="sijin_audio_")
+                        outtmpl = os.path.join(workdir, "audio.%(ext)s")
+                        opts = {"format": "bestaudio/best", "noplaylist": True, "default_search": "ytsearch1", "outtmpl": outtmpl,
+                                "quiet": True, "no_warnings": True, "extract_flat": False,
+                                "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+                                "max_filesize": 48 * 1024 * 1024}
+                        with yt_dlp.YoutubeDL(opts) as ydl:
+                            ydl.download(["ytsearch1:" + query])
+                        audio_path = next((os.path.join(workdir, f) for f in os.listdir(workdir) if f.lower().endswith((".mp3", ".m4a", ".opus", ".webm", ".ogg"))), None)
+                        if not audio_path:
+                            raise RuntimeError("لم يتم العثور على ملف صوت")
+                        with open(audio_path, "rb") as audio:
+                            sb.send_audio(cid, audio, title=query, reply_to_message_id=msg.message_id, timeout=120)
+                        try: sb.delete_message(cid, status.message_id)
+                        except Exception: pass
+                    except Exception:
+                        sb.reply_to(msg, "❌ ما كدرت أجيب الصوت هالمرة. تأكد من تثبيت yt-dlp وFFmpeg وأن الأغنية متاحة، وجرب اسم أغنية ثاني.")
+                    finally:
+                        if workdir:
+                            shutil.rmtree(workdir, ignore_errors=True)
                     return
+                general_replies = {
+                    "السلام عليكم": ["وعليكم السلام ورحمة الله وبركاته 🌷", "هلا وعليكم السلام، نورتوا 🤍"],
+                    "سلام عليكم": ["وعليكم السلام ورحمة الله وبركاته 🌹"], "هلا": ["هلا وغلا بيك 🌸", "يا هلا نورت المكان"], "هلو": ["هلوات، شلونك؟ 😄"],
+                    "صباح الخير": ["صباح النور والسرور ☀️", "صباح الورد والياسمين 🌷"], "مساء الخير": ["مساء النور والراحة 🌙", "مساء الورد"],
+                    "شلونك": ["الحمدلله بخير، إنت شلونك؟ 🤍", "تمام دامك بخير، شخبارك؟"], "شخبارك": ["كلشي تمام الحمدلله، إنت شلونك؟"],
+                    "الحمدلله": ["دوم الحمد والشكر لله 🤲", "يدوم عليك الخير والعافية"], "شكرا": ["ولو، بالخدمة 🌷", "تدلل ما سوينا شي"], "شكراً": ["ولو، بالخدمة 🌷", "تدلل ما سوينا شي"],
+                    "عاشت ايدك": ["الله يعافيك ويسلمك 🤍", "تسلم، هذا من ذوقك"], "عاشت إيدك": ["الله يعافيك ويسلمك 🤍"], "اسف": ["حصل خير، لا تشيل هم 🌿"], "آسف": ["حصل خير، ولا يهمك 🤍"],
+                    "سامحني": ["مسامحك، تصير بأحسن العوائل 🌷"], "مبروك": ["ألف ألف مبروك، تستاهل كل خير 🎉"], "الف مبروك": ["ألف مبروك وعقبال الأفراح دوم 🎊"],
+                    "الله يوفقك": ["وياك يا رب ويفتحها بوجهك 🤲"], "امين": ["آمين يا رب العالمين 🤲"], "آمين": ["آمين وياك يا رب"], "الله يخليك": ["ويخليك لأحبابك يا رب 🤍"],
+                    "هههه": ["دوم هالضحكة 😂", "ضحكتك بالدنيا كلها"], "😂": ["دوم الضحكة 😂"], "ملل": ["غيّر جو شوي، سولف ويانه أو اسمع شي تحبه 😄"], "طفشان": ["تعال نغيّر الجو، تريد سؤال لو نكتة؟ 😄"],
+                    "فرحان": ["تدوم فرحتك يا رب، الله يزيدك أفراح 🌟"], "زعلان": ["إن شاء الله تنفرج، إذا تحب احچي شبيك وأنا أسمعك 🤍"], "معصب": ["هدي بالك وخذ نفس، لا تخلي لحظة عصبية تضايقك 🌿"], "معقولة": ["إي والله؟ شنو السالفة؟ 😯"],
+                    "اي": ["تمام حبيبي 🤝"], "إي": ["تمام حبيبي 🤝"], "لا": ["براحتك، رأيك محترم 🌷"], "شلون": ["تقصد شنو بالضبط؟ وضّحلي وأساعدك 😄"], "شنو": ["تفضل، شنو سؤالك؟ 👀"],
+                    "اسمك": ["آني بوت سجين 🤖"], "كم عمرك": ["آني بوت، ما عندي عمر مثل البشر 😄"], "وينك": ["موجود هنانا وياكم 🤖"], "الساعة": ["شوف ساعة جهازك حتى تحصل الوقت المحلي الدقيق ⏰"],
+                    "ساعدني": ["أكيد، گلي شنو تحتاج وإن شاء الله أساعدك 🤝"], "ما فهمت": ["ولا يهمك، وضّحلي أي جزء وأشرحه بطريقة أبسط 🌷"], "كفو": ["كفوك الطيب والأصيل 👑", "كفو منك ومن أصلك"],
+                    "حبيبي": ["حبيب قلبي، تدلل 🤍", "عيوني إنت"], "عيني": ["عيونك الحلوة 🌹", "تدلل عيني"], "وردة": ["إنت الورد كله 🌹"], "مبدع": ["الإبداع من ذوقك والله ✨"],
+                    "احبك": ["محبة واحترام إلك، الله يسعدك 🤍"], "أحبك": ["محبة واحترام إلك، الله يسعدك 🤍"], "اشتقتلك": ["الله يديم الود بينكم ويجمعكم على خير 🤍"], "اكرهك": ["براحتك، أتمنى لك الخير على كل حال 🌿"],
+                    "استفزاز": ["خلّينا نحچي بهدوء ونحترم بعض 🤝"], "غبي": ["خلّينا نخلي كلامنا ألطف حتى تبقى السالفة حلوة 🌿"], "تسلم": ["الله يسلمك ويحفظك 🌷"], "فدوة": ["فداك الطيب، تدلل 🤍"],
+                    "حياك": ["الله يحييك ويبقيك 🌹"], "نورت": ["بنورك يا طيب ✨"], "منور": ["نورك سابق 🌟"], "يا هلا": ["هلا بيك أكثر، نورتنا 🌸"], "مع السلامة": ["الله وياك ويحفظك، نشوفك على خير 👋"],
+                    "تصبح على خير": ["وإنت من أهل الخير والأحلام الحلوة 🌙"], "تصبحون على خير": ["وإنتوا من أهل الخير 🌙"], "كفو والله": ["كفوك الطيب يا أصيل 👑"], "حبي": ["تدلل يا طيب 🤍"], "الغالي": ["الغالي إنت والله 🌹"],
+                }
+                if text in general_replies:
+                    sb.reply_to(msg, random.choice(general_replies[text]))
+                    return
+
                 fun = {
                     "جمالي": "✨ الجمال الحقيقي بالأخلاق والروح الحلوة.",
                     "الحب": "🤍 الحب احترام وصدق واهتمام.",
@@ -496,6 +665,9 @@ def run_sub_bot(token):
 def start_handler(msg):
     if msg.chat.type == "private":
         WAITING_FOR_TOKEN.discard(msg.from_user.id)
+        # Remove any old persistent reply keyboard saved in the Telegram chat.
+        bot.send_message(msg.chat.id, "تم تحديث القائمة وإزالة الأزرار السفلية القديمة.",
+                         reply_markup=ReplyKeyboardRemove())
         bot.send_message(msg.chat.id,
             f"أهلاً بك في مصنع بوتات سجين ⚡\nالحد الأقصى: {MAX_BOTS} بوتات.\nاختر من القائمة:",
             reply_markup=MAKER_KEYBOARD)
