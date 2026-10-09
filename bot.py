@@ -1,537 +1,600 @@
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
+import os
+import time
 import random
 import threading
-import time
+from urllib.parse import quote_plus
 
-TOKEN = "8719015904:AAG7MwDSnyGMeNLfUH1W9aiumtlOr0WJMr8"
-DEV = "@M_C_67"
-bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
 
+# Railway: أضف BOT_TOKEN من Variables ولا تضع التوكن داخل GitHub.
+TOKEN = os.getenv("BOT_TOKEN", "").strip()
+DEV_USERNAME = "M_C_67"
+DEV_LINK = "https://t.me/M_C_67"
+MAX_BOTS = 3
+
+if not TOKEN:
+    raise RuntimeError("أضف BOT_TOKEN في Railway → Variables")
+
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 USER_BOTS = {}
 WAITING_FOR_TOKEN = set()
 RUNNING_SUB_BOTS = {}
 
 MAKER_KEYBOARD = InlineKeyboardMarkup([
     [InlineKeyboardButton("صنع بوت فرعي جديد 🤖", callback_data="create_bot")],
-    [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots"), InlineKeyboardButton("تفعيل بوت VIP 💎", url="https://t.me/M_C_67")],
-    [InlineKeyboardButton("مطور المصنع 👤", url="https://t.me/M_C_67")]
+    [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots"),
+     InlineKeyboardButton("تفعيل VIP 💎", url=DEV_LINK)],
+    [InlineKeyboardButton("مطور المصنع 👤", url=DEV_LINK)]
 ])
 
-CAT_QUESTIONS = [
-    "شنو أكثر شي تحبه بصديقك المقرب؟ 🖤", "لو انطوك مليار دولار، شنو أول شغلة تشتريها؟ 💸", "كلمة توجها لشخص خان ثقتك؟ 🎭",
-    "شنو أحلى صفة بشخصيتك وأسوأ صفة؟ 🤔", "لو رجع بيك الزمن للماضي، شنو الشغلة اللي تغيرها؟ ⏳", "أكثر موقف محرج صار وياك بحياتك شنو هو؟ 😅",
-    "تحب الحياة الهادئة لو حياة المغامرات والسفر؟ 🌍", "شنو الأكلة العراقية اللي مستحيل تمل منها؟ 🍲", "لو تكدر تختفي يوم واحد، وين تروح وشسوّي؟ 🫥",
-    "شنو أكتر اسم تحب تسميه بالمستقبل؟ 👶", "لو خيروك تعيش بلا إنترنت أو بلا أصدقاء، شتختار؟ 📵", "شنو أكتر موقف ضحكك لدرجة البجي بحياتك؟ 😂",
-    "شخص تعتبره قدوتك بالحياة وليش؟ 🌟", "شنو ردت فعلك لو شخص عيط بوجهك بدون سبب؟ 😡", "لو كولشي متوفر عندك، وين تتمنى تعيش؟ 🏡",
-    "شنو أكتر صفة تكرهها بالناس؟ 😒", "إذا انطوك فرصة ترجع لليوم الصبح، شنو تغير بي؟ 🌅", "شنو أكتر شي يخوفك بالمستقبل؟ 🔮",
-    "شنو هوايتك السرية اللي ما حد يعرفها؟ 🤫", "لو صار عندك مصنع بوتات، شنو أول شي تسويه؟ 🤖", "كلمة تعتذر بيها لنفسك، شنو تكولها؟ 🥀",
-    "شنو أكتر طبخة تعرف تسويها؟ 🍳", "لو كالوا لك عندك أمنية وحدة وتتحقق، شنو تطلب؟ 🌠", "شكد نسبة العصبية بحياتك من 10؟ ⚡",
-    "اذا جان عندك القدرة تقرأ أفكار الناس، تقرأها لو تخاف؟ 🧠", "شنو أكتر شي يخليك تفقد أعصابك بسرعة؟ 🔥", "تحب تعترف بغلطك لو تكابر؟ 🎭",
-    "شنو أحلى هدية اجتك بحياتك؟ 🎁", "لو كالوا لك بدّل اسمك، شنو تختار؟ 🏷️", "أكتر مكان ترتاح من تقعد بي لوحدك؟ 🌊",
-    "شنو رد فعلك من تشوف شخص يبجي؟ 🥺", "تثق بالبسهولة لو تحتاج وقت؟ ⏳", "شنو أكتر كتاب أو قصة أثرت بيك؟ 📚",
-    "إذا كالو لك سافر لدولة وحدة وممنوع ترجع، وين تروح؟ ✈️", "شنو أكتر كلمة تكولها بحياتك اليومية؟ 🗣️", "أحلى مرحلة عمرية عشتها بحياتك؟ 🧸",
-    "شنو أكتر مقلب صاير بيك وانقهرت منه؟ 🤡", "تحب الشتا لو الصيف وليش؟ 🌧️", "شنو رأيك بالحب من أول نظرة؟ 💘",
-    "أكتر كلمة تفرحك من تسمعها؟ 🌸", "لو صرت ممثل مشهور، شنو الدور اللي تتمناه؟ 🎬", "شنو أكتر شي تندمت عليه لأن ما سويته؟ 💨",
-    "شخص مستحيل تنسى موقفه وياك بالشدة؟ 🤝", "شنو أكتر شي يزعجك بالناس المزاجية؟ 🌀", "اذا انطوك فرصة تنام شهر كامل وتكعد، توافق؟ 🛌",
-    "شنو أكتر شي تفتخر بي سويته بحياتك؟ 🎖️", "هل أنت شخص غيور بطبيعتك؟ 🖤", "شنو رد فعلك لو شخص انتقدك قدام الناس؟ 🛑",
-    "لو انطوك طاقة خفية، شتختار (طيران، اختفاء، قراءة أفكار)؟ 🦸‍♂️", "شنو أكتر أكلة تكرهها بحياتك؟ 🤢", "شنو أكتر موقف حسيت بيه بالامتنان؟ 🙏",
-    "هل تكدر تكعد الصبح ببدون منبه؟ ⏰", "شنو أكتر شي يلفت انتباهك بالشخص أول ما تشوفه؟ 👀", "اذا صار عندك مليون متابع، شنو تقدم محتوى؟ 📱",
-    "شنو أكتر موقف حسيت بيه بالظلم؟ ⚖️", "تحب الأكل الحار لو البارد؟ 🌶️", "شنو أكتر شي تخاف تخسره بحياتك؟ 💔",
-    "إذا جان عندك قناة تليجرام، شنو تسميها؟ 📢", "شنو أكتر شي يخليك تبتسم بدون سبب؟ 😊", "هل أنت شخص صريح لدرجة الجرح؟ 🗡️",
-    "شنو أكتر وقت تحس بي نفسك منتج ونشط؟ 🔋", "شنو أكتر شي تعبت عليه بحياتك ونلت بسببه نتيجة حلوة؟ 🏆", "إذا كالوا لك اكتب رسالة لكل شخص خانك، شتكتب؟ ✉️",
-    "شنو أكتر شيء يلغي تعبك ونفسيتك التعبة؟ 🎧", "شنو العادة السيئة اللي تتمنى تخلص منها؟ 🚬", "إذا جان بيدك تغير قانون بالدولة، شتغير؟ 🏛️",
-    "شنو أكتر شي تحبه بغرفتك؟ 🛏️", "شنو نوع الموسيقى أو الأناشيد اللي تفضلها؟ 🎵", "لو صار عندك المقدرة تسافر للماضي، أي سنة تختار؟ 🕰️",
-    "شنو أكتر موقف خلاك تحس بالكبر والمسؤولية؟ 🧠", "هل تؤمن بالحظ لو بالتعب والسعي؟ 🎯", "شنو أكتر صفة تعجبك بالمحيطين بيك؟ 💎",
-    "إذا انطوك فرصة تكون بطل قصة خيالية، تختار تكون منو؟ 🦸", "شنو أكتر شي يخليك تثق بشخص غريب؟ 🤝", "شنو شعورك أول ما تفتح عيونك الصبح؟ 🌅",
-    "شنو أكتر شي يضوجك من شخص يتأخر عليك بموعد؟ ⌛", "لو خيروك بين العزلة واللمة، شتختار؟ 🌌", "شنو أكتر شي تتابعه بيوتيوب؟ 📺",
-    "شنو أكتر اكله تفضلها بالليل؟ 🍕", "إذا جان بيدك تلغي شغلة وحدة من العالم، شتلغي؟ 🗑️", "شنو أكتر شي تحب تسويه من تكون ضايج؟ 🚶‍♂️",
-    "شنو أكتر موقف خلاك تضحك على نفسك؟ 😂", "هل أنت شخص يتأثر بالانتقادات لو تخليه ورا ضهرك؟ 🛡️", "شنو أمنيتك لهل السنة؟ 🎄",
-    "شنو أكتر شي تلاحظه بشخصية المقابل؟ 🔍", "إذا انطوك فرصة تغير شكلك، شنو تغير؟ ✨", "شنو أكتر اسم دلع تحب يصيحونك بي؟ 🗣️",
-    "هل تحب تسوي مقالب بالناس؟ 🎭", "شنو أكتر شي يخليك تفقد الأمل وترجع تعتمده؟ 🔄", "شنو أكتر صفة توارثتها من أهلك؟ 🧬",
-    "لو كالو لك تكدر تطير لساعة وحدة، وين تطير؟ 🦅", "شنو أكتر شي يخليك تحس بالأمان؟ 🏡", "هل تكدر تقاوم النوم والسهر؟ 🌙",
-    "شنو أكتر كلمة تقال الك وتفرحك؟ 💌", "اذا انطوك كتاب حياتك وتقرأ صفحة النهاية، تقراها لو تخاف؟ 📖", "شنو رأيك بالناس اللي تحكي من ورا ضهرك؟ 🗣️",
-    "شنو أكتر موقف حسيت بيه بالفخر؟ 🦅", "ختاماً، كلمة توجها لنفسك اليوم؟ 🖤"
+QUESTIONS = [
+    "شنو أكثر شي تحبه بصديقك المقرب؟ 🖤",
+    "لو انطوك مليار دولار، شنو أول شغلة تشتريها؟ 💸",
+    "كلمة توجها لشخص خان ثقتك؟ 🎭",
+    "شنو أحلى صفة بشخصيتك وأسوأ صفة؟ 🤔",
+    "لو رجع بيك الزمن للماضي، شنو الشغلة اللي تغيرها؟ ⏳",
+    "شنو الأكلة العراقية اللي مستحيل تمل منها؟ 🍲",
+    "تحب الحياة الهادئة لو المغامرات والسفر؟ 🌍",
+    "لو عندك أمنية وحدة وتتحقق، شنو تطلب؟ 🌠",
+    "شنو أكثر شي يخليك تبتسم بدون سبب؟ 😊",
+    "شنو أكثر صفة تكرهها بالناس؟ 😒"
 ]
-
 ID_STYLES = [
-    "✨ ━━━━━ ⦗ ايديك الرائع ⦘ ━━━━━ ✨", "🔥 ── • [ بطاقة الهوية ] • ── 🔥", "💎 ════ ≪ بطاقة العضو ≫ ════ 💎",
-    "⚡ ──━[ هويتك الرسمية ]━━── ⚡", "🌟 ─── ❖ ⦗ كرت التعريف ⦘ ─── 🌟", "🖤 ══════ ≪ ايدي مميز ≫ ══════ 🖤",
-    "🚀 ─── • ⦗ هويتك بالكروب ⦘ • ─── 🚀", "👑 ───── ❖ ⦗ بطاقة الملوك ⦘ ───── 👑", "💫 ━━━ ≪ كرت التعريف الخاص ≫ ━━━ 💫",
-    "⚜️ ─── • [ ايدي سجين ] • ─── ⚜️", "🔹 ════════ ≪ هويتك ≫ ════════ 🔹", "🌠 ───── ❖ ⦗ بطاقتك ⦘ ───── 🌠",
-    "🎯 ─── • ⦗ ايدي الفخم ⦘ • ─── 🎯", "🔮 ═════ ≪ كرت العضو ≫ ═════ 🔮", "⚡ ───── ❖ ⦗ الهوية ⦘ ───── ⚡",
-    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ⚓",
-    "🌙 ─── • [ كرت الهوية ] • ─── 🌙", "🔥 ═════ ≪ هويتك الأسطورية ≫ ═════ 🔥"
+    "✨ ━━━━━ ⦗ ايديك الرائع ⦘ ━━━━━ ✨",
+    "🔥 ── • [ بطاقة الهوية ] • ── 🔥",
+    "💎 ════ ≪ بطاقة العضو ≫ ════ 💎",
+    "⚡ ──━[ هويتك الرسمية ]━━── ⚡",
+    "🌟 ─── ❖ ⦗ كرت التعريف ⦘ ─── 🌟",
+    "👑 ───── ❖ ⦗ بطاقة الملوك ⦘ ───── 👑"
 ]
 
 def run_sub_bot(token):
+    """كل بوت فرعي يعمل بعامل منفصل. بيانات الرتب والقوائم في الذاكرة مؤقتة."""
     while True:
         try:
-            sub_bot = telebot.TeleBot(token, parse_mode="Markdown")
-            me = sub_bot.get_me()
-            bot_name = me.first_name
-            bot_username = f"@{me.username}"
+            sb = telebot.TeleBot(token, parse_mode="HTML")
+            me = sb.get_me()
+            activated = set()
+            welcomes = {}
+            id_photo = {}
+            ranks = {}       # chat_id -> {user_id: rank}
+            muted = {}       # سجل عمليات البوت الحالية، وليس كشفاً كاملاً من تيليجرام
+            banned = {}
+            kicked = {}
+            restricted = {}
+            warnings = {}
+            whisper_sessions = {}
+            whisper_store = {}
+            settings = {}
 
-            activated_chats = set()
-            welcome_settings = {}
-            id_photo_settings = {}
-            global_whispers_cache = {}
+            def is_dev(user):
+                return bool(user and user.username and user.username.lower() == DEV_USERNAME.lower())
 
-            def get_reply_target(message):
-                """Return replied-to user, or None. Telegram normally supplies reply_to_message."""
-                replied = getattr(message, "reply_to_message", None)
-                if replied is not None:
-                    target = getattr(replied, "from_user", None)
-                    if target is not None:
-                        return target
+            def replied_user(message):
+                reply = getattr(message, "reply_to_message", None)
+                return getattr(reply, "from_user", None) if reply else None
+
+            def rank_of(chat_id, user):
+                if is_dev(user):
+                    return "المطور الأساسي"
+                try:
+                    member = sb.get_chat_member(chat_id, user.id)
+                    if member.status == "creator":
+                        return "مالك"
+                    if member.status == "administrator":
+                        return "مدير"
+                except Exception:
+                    pass
+                return ranks.get(chat_id, {}).get(user.id, "عضو")
+
+            def admin(chat_id, user):
+                return rank_of(chat_id, user) in ("المطور الأساسي", "مالك", "مدير")
+
+            def target_user(message, parts):
+                target = replied_user(message)
+                if target:
+                    return target
+                if len(parts) > 1 and parts[1].isdigit():
+                    try:
+                        return sb.get_chat_member(message.chat.id, int(parts[1])).user
+                    except Exception:
+                        return None
                 return None
 
-            @sub_bot.message_handler(commands=['start'])
-            def sub_start(msg):
-                if msg.chat.type != 'private':
-                    return
-                user_id = msg.from_user.id
-                text = (msg.text or "").strip()
+            def get_ids(store, chat_id):
+                ids = sorted(store.get(chat_id, set()))
+                if not ids:
+                    return "القائمة فارغة حالياً."
+                lines = []
+                for uid in ids[:80]:
+                    try:
+                        name = sb.get_chat_member(chat_id, uid).user.first_name
+                    except Exception:
+                        name = "عضو"
+                    lines.append(f"• {name} — <code>{uid}</code>")
+                if len(ids) > 80:
+                    lines.append(f"… وبقية {len(ids)-80} عضواً.")
+                return "\n".join(lines)
 
-                if text.startswith("/start whisper_"):
-                    parts = text.split("_", 4)
-                    if len(parts) >= 4:
-                        try:
-                            target_id = int(parts[2])
-                            chat_id = int(parts[3].split()[0])
-                        except (ValueError, IndexError):
-                            sub_bot.send_message(user_id, "⚠️ رابط الهمسة غير صالح. ارجع للمجموعة واضغط زر الهمسة من جديد.")
-                            return
-                        target_name = parts[4].replace("_", " ") if len(parts) > 4 else "العضو"
-                        global_whispers_cache[user_id] = {
-                            'target_id': target_id, 'target_name': target_name, 'chat_id': chat_id
+            @sb.message_handler(commands=["start"])
+            def start_sub(msg):
+                if msg.chat.type != "private":
+                    return
+                uid = msg.from_user.id
+                raw = (msg.text or "").strip()
+                if raw.startswith("/start whisper_"):
+                    payload = raw[len("/start whisper_"):]
+                    try:
+                        target_s, chat_s, name = payload.split("_", 2)
+                        whisper_sessions[uid] = {
+                            "target": int(target_s), "chat": int(chat_s), "name": name.replace("_", " ")
                         }
-                        sub_bot.send_message(
-                            user_id,
-                            f"🔒 **أهلاً بك في خاص الهمسات السرية!**\n\n"
-                            f"👤 الشخص المراد اهمـاسه: **{target_name}**\n"
-                            f"✍️ اكتب نص الهمسة الآن في رسالة جديدة، وسأنشرها في المجموعة 👇"
-                        )
-                        return
-
-                if user_id in global_whispers_cache:
-                    sub_bot.send_message(user_id, "⚠️ أنت بانتظار كتابة نص الهمسة؛ أرسل النص مباشرة هنا.")
+                        sb.send_message(uid, "🔒 أرسل نص الهمسة الآن برسالة جديدة.")
+                    except Exception:
+                        sb.send_message(uid, "⚠️ رابط الهمسة غير صالح؛ ارجع للمجموعة وجرّب من جديد.")
                     return
-
-                start_caption = (
-                    f"⌔︙أهـلا بـك في بـوت ﴿ {bot_name} ﴾\n"
-                    f"⌔︙لحماية المجموعات 🛡️\n"
-                    f"⌔︙أضف البوت وارفعه مشرفاً في مجموعتك\n"
-                    f"⌔︙أرسل ﴿ تفعيل ﴾ لتفعيل المجموعة ⚡\n\n"
-                    f"⌔︙يوزر البوت ← {bot_username}\n"
-                    f"⌔︙يوزر المطور ← {DEV}"
+                sb.send_message(
+                    msg.chat.id,
+                    f"أهلاً بك في بوت {me.first_name} 🤖\n"
+                    "أضفني للمجموعة وارفعني مشرفاً ثم أرسل: تفعيل\n\n"
+                    f"يوزر البوت: @{me.username}\nمطور المصنع: {DEV_LINK}"
                 )
-                try:
-                    photos = sub_bot.get_user_profile_photos(me.id, limit=1)
-                    if photos.total_count:
-                        sub_bot.send_photo(msg.chat.id, photos.photos[0][0].file_id, caption=start_caption)
-                        return
-                except Exception:
-                    pass
-                sub_bot.send_message(msg.chat.id, start_caption)
 
-            @sub_bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user and msg.from_user.id in global_whispers_cache, content_types=['text'])
-            def handle_whisper_text_input(msg):
-                user_id = msg.from_user.id
-                whisper_data = global_whispers_cache.get(user_id)
-                if not whisper_data:
-                    sub_bot.reply_to(msg, "⚠️ انتهت صلاحية جلسة الهمسة؛ اضغط زر الهمسة من المجموعة مجدداً.")
+            @sb.message_handler(
+                func=lambda m: m.chat.type == "private" and m.from_user and m.from_user.id in whisper_sessions,
+                content_types=["text"]
+            )
+            def whisper_input(msg):
+                uid = msg.from_user.id
+                data = whisper_sessions.get(uid)
+                body = (msg.text or "").strip()
+                if not data or not body or body.startswith("/"):
+                    sb.reply_to(msg, "أرسل نص الهمسة مباشرة.")
                     return
-                whisper_text = (msg.text or "").strip()
-                if not whisper_text or whisper_text.startswith('/'):
-                    sub_bot.reply_to(msg, "⚠️ أرسل نص الهمسة بشكل طبيعي، وليس كأمر تليجرام.")
-                    return
-
-                target_id = whisper_data['target_id']
-                target_name = whisper_data['target_name']
-                chat_id = whisper_data['chat_id']
-                sender_name = msg.from_user.first_name
-                whisper_key = f"{user_id}_{target_id}"
-                if not hasattr(sub_bot, 'whisper_store'):
-                    sub_bot.whisper_store = {}
-                sub_bot.whisper_store[whisper_key] = whisper_text
-                del global_whispers_cache[user_id]
-
+                key = f"{uid}:{data['target']}:{data['chat']}"
+                whisper_store[key] = body
                 markup = InlineKeyboardMarkup([[
-                    InlineKeyboardButton("💬 اضغط لقراءة الهمسة السرية", callback_data=f"read_whisper_{user_id}_{target_id}")
+                    InlineKeyboardButton("💬 قراءة الهمسة السرية",
+                        callback_data=f"readwhisper:{uid}:{data['target']}:{data['chat']}")
                 ]])
                 try:
-                    sub_bot.send_message(
-                        chat_id,
-                        f"🔒 **همسة سرية جديدة!**\n\n"
-                        f"👤 المرسل: [{sender_name}](tg://user?id={user_id})\n"
-                        f"🎯 المرسل إليه: [{target_name}](tg://user?id={target_id})\n\n"
-                        f"فقط الشخص المعني يمكنه قراءة الهمسة بالضغط على الزر أدناه 👇",
+                    sb.send_message(
+                        data["chat"],
+                        f"🔒 همسة من <a href='tg://user?id={uid}'>مرسل</a> "
+                        f"إلى <a href='tg://user?id={data['target']}'>{data['name']}</a>.",
                         reply_markup=markup
                     )
-                    sub_bot.reply_to(msg, "✅ **تم إرسال همستك السرية إلى المجموعة بنجاح!** 🤫✨")
-                except Exception as e:
-                    sub_bot.reply_to(msg, f"❌ تعذر إرسال الهمسة. تأكد أن البوت موجود بالمجموعة.\nالتفاصيل: {e}")
-
-            @sub_bot.callback_query_handler(func=lambda call: call.data.startswith("read_whisper_"))
-            def sub_callback_handlers(call):
-                try:
-                    parts = call.data.split("_")
-                    sender_id, target_id = int(parts[2]), int(parts[3])
-                except (ValueError, IndexError):
-                    sub_bot.answer_callback_query(call.id, "الهمسة غير صالحة.", show_alert=True)
-                    return
-                if call.from_user.id not in (sender_id, target_id) and call.from_user.username != "M_C_67":
-                    sub_bot.answer_callback_query(call.id, "❌ هذه الهمسة سرية وليست مخصصة لك!", show_alert=True)
-                    return
-                content = getattr(sub_bot, 'whisper_store', {}).get(f"{sender_id}_{target_id}", "⚠️ انتهت صلاحية الهمسة أو حُذفت.")
-                sub_bot.answer_callback_query(call.id, f"📝 نص الهمسة: {content}", show_alert=True)
-
-            @sub_bot.message_handler(content_types=['new_chat_members'])
-            def sub_welcome(msg):
-                chat_id = msg.chat.id
-                if chat_id in activated_chats and welcome_settings.get(chat_id, True):
-                    for member in msg.new_chat_members:
-                        sub_bot.send_message(chat_id, f"هلا بيك يا بعد روحي 🌸 [{member.first_name}](tg://user?id={member.id})\nنورت الكروب بوجودك يا عطرها ⚡🖤")
-
-            @sub_bot.message_handler(content_types=['text'])
-            def sub_group_handler(msg):
-                if msg.chat.type not in ('group', 'supergroup') or not msg.from_user:
-                    return
-                chat_id = msg.chat.id
-                text = (msg.text or "").strip()
-                user = msg.from_user
-                user_id = user.id
-                user_name = user.first_name
-                is_main_dev = user.username == "M_C_67"
-                is_admin = False
-                is_chat_creator = False
-                try:
-                    member = sub_bot.get_chat_member(chat_id, user_id)
-                    if member.status in ('creator', 'administrator'):
-                        is_admin = True
-                    if member.status == 'creator':
-                        is_chat_creator = True
+                    sb.reply_to(msg, "✅ تم إرسال الهمسة.")
                 except Exception:
-                    pass
-                if is_main_dev:
-                    is_admin = True
+                    sb.reply_to(msg, "❌ تعذر إرسال الهمسة؛ تأكد أن البوت موجود بالمجموعة.")
+                whisper_sessions.pop(uid, None)
+
+            @sb.callback_query_handler(func=lambda c: c.data.startswith("readwhisper:"))
+            def read_whisper(call):
+                try:
+                    _, sender_s, target_s, chat_s = call.data.split(":")
+                    sender, target, chat_id = int(sender_s), int(target_s), int(chat_s)
+                except Exception:
+                    sb.answer_callback_query(call.id, "همسة غير صالحة.", show_alert=True)
+                    return
+                if call.from_user.id not in (sender, target) and not is_dev(call.from_user):
+                    sb.answer_callback_query(call.id, "هذه الهمسة ليست مخصصة لك.", show_alert=True)
+                    return
+                text = whisper_store.get(f"{sender}:{target}:{chat_id}", "انتهت صلاحية الهمسة.")
+                sb.answer_callback_query(call.id, text[:190], show_alert=True)
+
+            @sb.message_handler(content_types=["new_chat_members"])
+            def welcome(msg):
+                cid = msg.chat.id
+                if cid in activated and welcomes.get(cid, True):
+                    for member in msg.new_chat_members:
+                        sb.send_message(cid, f"هلا بيك يا <a href='tg://user?id={member.id}'>{member.first_name}</a> 🌸 نورت المجموعة.")
+
+            @sb.message_handler(content_types=["text"])
+            def group_commands(msg):
+                if msg.chat.type not in ("group", "supergroup") or not msg.from_user:
+                    return
+                cid, user = msg.chat.id, msg.from_user
+                uid = user.id
+                text = (msg.text or "").strip()
+                parts = text.split()
+                is_admin = admin(cid, user)
 
                 if text == "تفعيل":
-                    if is_admin or is_chat_creator:
-                        activated_chats.add(chat_id)
-                        sub_bot.reply_to(msg, "✅ **تم تفعيل المجموعة بنجاح وحماية سجين تعمل بكامل طاقتها ⚡**")
+                    if is_admin:
+                        activated.add(cid)
+                        sb.reply_to(msg, "✅ تم تفعيل المجموعة.")
                     else:
-                        sub_bot.reply_to(msg, "⚠️ أمر التفعيل مخصص للمدراء والمشرفين فقط!")
+                        sb.reply_to(msg, "⚠️ التفعيل للمالك والمدراء فقط.")
                     return
-                if chat_id not in activated_chats:
-                    return
-
-                if text in ("همسه", "همسة"):
-                    target_user = get_reply_target(msg)
-                    if target_user is None:
-                        sub_bot.reply_to(msg, "⚠️ ما وصلني الرد على رسالة العضو. جرّب الرد على رسالة العضو الأصلية مباشرة، وإذا استمرت المشكلة أرسل الأمر بصيغة: همسة 123456789 (ايدي العضو).")
-                        return
-                    if target_user.id in (me.id, user_id):
-                        sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة للبوت أو لنفسك!")
-                        return
-                    safe_name = target_user.first_name.replace(" ", "_")
-                    markup = InlineKeyboardMarkup([[
-                        InlineKeyboardButton("اضغط هنا لكتابة الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper_{target_user.id}_{chat_id}_{safe_name}")
-                    ]])
-                    sub_bot.reply_to(
-                        msg,
-                        f"🔒 **مرحباً [{user_name}](tg://user?id={user_id})**\n\n"
-                        f"لقد طلبت إرسال همسة إلى [{target_user.first_name}](tg://user?id={target_user.id})\n"
-                        f"اضغط على الزر أدناه للدخول للخاص وكتابة الهمسة السرية 👇",
-                        reply_markup=markup
-                    )
-                    return
-
-                if text.startswith(("طرد", "كتم", "تقييد")):
-                    if not is_admin:
-                        sub_bot.reply_to(msg, "⚠️ هذه الأوامر مخصصة للمشرفين فقط!")
-                        return
-                    target_user = get_reply_target(msg)
-                    # Fallback: support command with a numeric Telegram user ID.
-                    if target_user is None:
-                        pieces = text.split()
-                        if len(pieces) > 1 and pieces[1].isdigit():
-                            try:
-                                target_user = sub_bot.get_chat_member(chat_id, int(pieces[1])).user
-                            except Exception:
-                                target_user = None
-                    if target_user is None:
-                        sub_bot.reply_to(msg, "⚠️ ما وصلني الرد على رسالة الشخص. رد مباشرة على رسالته، أو استخدم: طرد 123456789 / كتم 123456789 / تقييد 123456789")
-                        return
-                    try:
-                        target_member = sub_bot.get_chat_member(chat_id, target_user.id)
-                        if target_member.status in ('creator', 'administrator') or target_user.username == "M_C_67":
-                            sub_bot.reply_to(msg, "❌ **لا يمكن تنفيذ إجراء بحق مشرف أو شخص محمي!** 🛡️")
-                            return
-                    except Exception:
-                        pass
-                    try:
-                        if text.startswith("طرد"):
-                            sub_bot.ban_chat_member(chat_id, target_user.id)
-                            sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
-                        elif text.startswith("كتم"):
-                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
-                            sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
-                        else:
-                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
-                            sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
-                    except Exception as e:
-                        sub_bot.reply_to(msg, f"❌ لم أستطع تنفيذ الأمر. تأكد أن البوت مشرف وصلاحياته تسمح بالإجراء.\nالتفاصيل: {e}")
-                    return
-
-                if text == "تفع":
-                    if is_admin:
-                        id_photo_settings[chat_id] = True
-                        sub_bot.reply_to(msg, "🖼️ **تم تفعيل عرض الصورة الشخصية في الأيدي بنجاح!** ⚡")
-                    return
-                elif text == "تعط":
-                    if is_admin:
-                        id_photo_settings[chat_id] = False
-                        sub_bot.reply_to(msg, "📝 **تم تعطيل عرض الصورة في الأيدي بنجاح!** ⚡")
-                    return
-
                 if text == "تعطيل":
-                    if is_admin or is_chat_creator:
-                        activated_chats.discard(chat_id)
-                        sub_bot.reply_to(msg, "❌ **تم تعطيل البوت في هذه المجموعة!**")
+                    if is_admin:
+                        activated.discard(cid)
+                        sb.reply_to(msg, "⛔ تم تعطيل البوت في المجموعة.")
+                    return
+                if cid not in activated:
                     return
 
-                if text in ["الأوامر", "اوامر", "ترتيب الاوامر", "قائمة الأوامر"]:
-                    commands_text = (
-                        "📋 **قائمة أوامر سورس سجين الشاملة:**\n\n"
-                        "👤 **أوامر الأعضاء:**\n"
-                        "• `ا` أو `ايدي` - عرض ايديك الفخم\n"
-                        "• `تغ` أو `تغير` - تغيير ستايل الايدي\n"
-                        "• `ر` أو `رابط` - جلب رابط الكروب\n"
-                        "• `همسة` (بالرد على العضو) - إرسال همسة سرية\n"
-                        "• `كت` - أسئلة كت ترفيهية\n"
-                        "• `يوت [كلمة]` - بحث يوتيوب سريع\n\n"
-                        "💬 **الردود العامة**\n\n"
-                        "🛠️ **أوامر المدراء:**\n"
-                        "• `تفعيل` / `تعطيل`\n"
-                        "• `طرد` / `كتم` / `تقييد` (بالرد)\n"
-                        "• `قفل الدردشة` / `فتح الدردشة`"
-                    )
-                    sub_bot.reply_to(msg, commands_text)
+                if text in ("الأوامر", "اوامر", "قائمة الأوامر", "ترتيب الاوامر"):
+                    sb.reply_to(msg,
+                        "📋 <b>أوامر سجين</b>\n\n"
+                        "🛡️ <b>الحماية:</b>\nقفل الدردشة / فتح الدردشة\n"
+                        "قفل الروابط / فتح الروابط\nقفل الصور / فتح الصور\n"
+                        "قفل الفيديو / فتح الفيديو\nقفل الملفات / فتح الملفات\n"
+                        "قفل التكرار / فتح التكرار\nقفل التوجيه / فتح التوجيه\n"
+                        "تفعيل الترحيب / تعطيل الترحيب\n\n"
+                        "👑 <b>الرتب:</b>\nرفع مميز أو مم أو م (بالرد)\nتنزيل مميز (بالرد)\n"
+                        "رفع مشرف / تنزيل مشرف (بالرد)\nرفع مدير / تنزيل مدير (بالرد)\n\n"
+                        "🔨 <b>الإدارة:</b>\nطرد / حظر / إلغاء حظر / كتم / إلغاء كتم\n"
+                        "تقييد / إلغاء تقييد / رفع القيود / إنذار (بالرد أو الآيدي)\n"
+                        "تثبيت / إلغاء التثبيت\n\n"
+                        "🧹 <b>القوائم والمسح:</b>\nالمميزين / المكتومين / المطرودين / المحظورين / المقيدين\n"
+                        "مسح المكتومين / مسح المطرودين / مسح المحظورين / مسح المقيدين / مسح المميزين\n\n"
+                        "🎮 <b>الأعضاء:</b>\nايدي أو ا / تغيير أو تغ / رابط أو ر / همسة (بالرد)\nكت / يوت [كلمة] / جمالي / الحب / الكره / الرجولة / الأنوثة / اقتباس / شعر / قرآن")
                     return
 
-                # الردود العامة الأصلية
-                replies = {
-                    ("السلام عليكم", "السلام", "سلام عليكم"): "وعليكم السلام ورحمة الله وبركاته يا هلا بـ ريحة هلي 🤍✨",
-                    ("وعليكم السلام", "وعليكم السلام ورحمة الله"): "يا هلا بطاريكم نورتوا الكروب والله 🌸",
-                    ("احبك", "أحبك", "احبج", "أحبج", "اموت عليك"): "عشكتك روح وجسد يا بعد بيتي وعافيتي أنت 🤍✨",
-                    ("فديتك", "فديتاس", "فديتج", "فدوه"): "فداك الكون وگلبي وعمري يا بعد روحي أنت 🖤⚡",
-                    ("هلاو", "هلا", "هلو", "هايات", "هلوز"): "هلا بيك يا بعد روحي ونبض گلبـي، منور 🌸⚡",
-                    ("شلونك", "شلونج", "شخباركم", "شلونكم"): "بخير دام عيونك الحلوة بخير يا غالي 🤍",
-                    ("عمي", "تاج راسي", "الشيخ"): "حبيبي الغالي تاج راس الكل أنت وفدوه لك الكل 👑🖤",
-                    ("روحي", "قلبي", "گلبـي", "عمري"): "روحه وعمره وكلبي يمه فديت هالطاري 🥺🤍",
-                    ("بوت", "البوت", "سجين"): "عيون البوت وخدامة للحلوين، امرني حبيبي 🤖🖤",
-                    ("منور", "منورين", "نوركم"): "نور عيونك الساطع يا وردة الكروب العطرة 🌟",
-                    ("تصبح على خير", "بباي", "مع السلامة", "في امان الله"): "وأنت من أهل الخير يا بعد روحي، دير بالك على نفسك هواي 🌙💤",
-                    ("احم", "احم احم"): "يا هلا بالشيخ، نورت المكان بطلتك 🦅🖤",
-                    ("شكرا", "تسلم", "مشكور"): "ولو تدلل عيوني، بخدمتكم دائماً 🤍✨",
-                    ("صباح الخير", "صباح النور", "صبايا"): "صباح الورد والفل على عيون أطيب ناس ☀️🌸",
-                    ("مساء الخير", "مساء الورد", "مساء الحب"): "مساء العسل والعيون السود يا غالي 🌙🤍",
-                    ("وينكم", "ميتين", "الكروب نايم"): "صيحو للشباب خليهم يصحون، الكروب بوجودكم يحلى ⚡🔥",
-                    ("هههه", "ههههه", "خرب ههه", "هههههههه"): "دوم هالضحكة الفرحانة يا رب، عسى ما تنتهي 😃❤️",
-                    ("اوف", "اووووف", "ضايج", "مخنوك"): "سلامة گلبك من الضيج يا بعد روحي، شبيها الحلوة تضوج؟ 🥺💔",
-                    ("شكو ماكو", "كو شي جديد"): "والله كولشي ماكو غير طرياتكم الحلوة بالكروب 🌸",
-                    ("دوم", "دومك", "تدوم الضحكة"): "تدوم أيامك حلوة وسعيدة يا رب ✨",
-                    ("اكلكم", "شباب", "بنات"): "گول عوني، سامعينك وكلنا وياك 🖤👂",
-                    ("تمام", "وكي", "صحيح", "عاشت ايدك"): "عاش من اذكرك، تدلل يا غالي 🤍",
-                    ("ولك", "ولك سجين", "لك بوت"): "عيون ولَك وروح ولَك، أمرني شتريد؟ 🙈🔥",
-                    ("حبي", "حبيبي", "عيوني"): "عيون حبيبي وروحه وكلبه أنت 🤍✨",
-                    ("غوالي", "الغالين", "أعز ناس"): "أنتم تاج راس الكل والله والفخر ليكم 👑",
-                    ("باي", "يلا باي", "رايح"): "بحفظ الله ورعايته، لا تطول الغيبة عنا 🥀",
-                    ("شنو السالفة", "شكو"): "ماكو شي، قاعدين نسولف ونشم هواكم الطيب 🍃",
-                    ("حباب", "فدوة", "ارجوك"): "تامرني أمر، عيوني لك والله 🌸",
-                    ("عاشت افيكم", "كفو", "عاشت الايادي"): "كفو منك يا ذيب، دائماً مبدع 🐺⚡",
-                    ("وينك", "مختفي", "صارلك غيبة"): "موجود بقلب الحدث وبخدمتكم طوال الوقت 🤖🖤",
-                    ("تعبان", "هيلث تعبان", "منتهي"): "سلامة تعبك، ارتاح لك شوية واهتم بنفسك 🛌💤",
-                    ("اكو أحد", "موجودين"): "اي نعم، البوت والشباب حاضرين لك ⚡",
-                    ("اكلك", "سجين اسمعني"): "سمعانك وبكل أذان صاغية، تفضل گول 🖤",
-                    ("عراقي", "العراق", "دارمي", "ابودذية"): "يا دار دار العز يا دار الحبيبة، فديت العراق وأهله 🇮🇶🦅",
-                    ("نورت الكروب", "نور الكروب بوجودي"): "طبعاً ينور بوجود الأساطير أمثالك 🌟",
-                    ("شكد عمرك", "مواليدك"): "عمري برمجته على حبكم، يعني شاب طازج 🤖✨",
-                    ("منين انت", "وين ساكن"): "أنا ابن السورس، وعايش بقلوبكم الطيبة 🤍",
-                    ("اسمي", "تعرفني"): "أكيد أعرفك، أنت الغالي اللي ما ينعوض 💎",
-                    ("حبيبتي", "عشيرتي"): "الله يخليكم لبعض ولا يفرقكم أبداً 🌸",
-                    ("صديقي", "اخوي", "صاحبي"): "نعم الأخ والصديق الوفي بالشدة 🤝🖤",
-                    ("تحبني", "تحبني لو تقشمرني"): "غير اموت عليك وعلى سوالفك الحلوة 🙈❤️",
-                    ("كافي", "بطل"): "صار، بعد ما أتحاچى عيونك تدلل 🤐✨",
-                    ("زعلان", "زعلان منك"): "عفية لا تزعل، رضاك علي يسوى الدنيا وما بيها 🥺🌹",
-                    ("منو مطورك", "منو صنعك"): "مطوري الأساسي وسيد الوجوه هو الأسطورة `@M_C_67` 👑",
-                    ("سورس", "سورس سجين"): "سورس سجين الأقوى لحماية الكروبات وتفليش الهكرز 🛡️⚡",
-                    ("اكل", "جوعان", "تريكت"): "بالهناء والشفاء، لو يمك جان سويتلك أطيب لفة فلافل عراقية 🌯😋",
-                    ("شربت ججاي", "جاي", "استكان جاي"): "يا سلام، استكان جاي مهيل على الحطب ينسيك تعب اليوم كله ☕🌿",
-                    ("الحب", "العشق"): "الحب الحقيقي هو وفاء الأصدقاء ونقاء القلوب 🤍",
-                    ("جمعة مباركة", "الجمعة"): "جمعة مباركة معطرة بذكر الله وبركات النبي محمد (ص) 🕌✨",
-                    ("باي باي", "مع السلامه", "الى اللقاء"): "في أمان الله وحفظه، نترقب رجعتك بفارغ الصبر يا غالي 👋🖤"
-                }
-                for triggers, response in replies.items():
-                    if text in triggers:
-                        sub_bot.reply_to(msg, response)
-                        return
-
-                if text in ("ا", "ايدي"):
-                    style = random.choice(ID_STYLES)
-                    rank = "المطور الأساسي 👑" if is_main_dev else ("منشئ 🛡️" if is_chat_creator else ("مشرف ⚡" if is_admin else "عضو مميز 🖤"))
-                    caption = f"{style}\n\n👤 اسمك: {user_name}\n🆔 ايديك: `{user_id}`\n🔰 رتبتك: {rank}"
-                    if id_photo_settings.get(chat_id, True):
+                if text in ("ايدي", "ا", "آيدي", "آيدي العضو"):
+                    r = rank_of(cid, user)
+                    caption = f"{random.choice(ID_STYLES)}\n\n👤 الاسم: {user.first_name}\n🆔 الآيدي: <code>{uid}</code>\n🔰 الرتبة: {r}"
+                    if id_photo.get(cid, True):
                         try:
-                            photos = sub_bot.get_user_profile_photos(user_id, limit=1)
+                            photos = sb.get_user_profile_photos(uid, limit=1)
                             if photos.total_count:
-                                sub_bot.send_photo(chat_id, photos.photos[0][0].file_id, caption=caption, reply_to_message_id=msg.message_id)
+                                sb.send_photo(cid, photos.photos[0][0].file_id, caption=caption, reply_to_message_id=msg.message_id)
                                 return
                         except Exception:
                             pass
-                    sub_bot.reply_to(msg, caption)
-                    return
-                if text in ("تغ", "تغيير"):
-                    sub_bot.reply_to(msg, f"🎨 **تم تغيير ستايل الايدي بنجاح:**\n\n{random.choice(ID_STYLES)}")
-                    return
-                if text == "تفعيل الترحيب" and is_admin:
-                    welcome_settings[chat_id] = True
-                    sub_bot.reply_to(msg, "✅ **تم تفعيل الترحيب في هذا الكروب!**")
-                    return
-                if text == "تعطيل الترحيب" and is_admin:
-                    welcome_settings[chat_id] = False
-                    sub_bot.reply_to(msg, "❌ **تم تعطيل الترحيب في هذا الكروب!**")
-                    return
-                if text in ("ر", "رابط"):
-                    try:
-                        link = sub_bot.export_chat_invite_link(chat_id)
-                        sub_bot.reply_to(msg, f"🔗 **رابط الكروب:**\n{link}")
-                    except Exception:
-                        sub_bot.reply_to(msg, "⚠️ تأكد من رفعي مشرف بصلاحية إضافة أعضاء لجلب الرابط.")
-                    return
-                if text == "قفل الدردشة" and is_admin:
-                    try:
-                        sub_bot.set_chat_permissions(chat_id, ChatPermissions(can_send_messages=False))
-                        sub_bot.reply_to(msg, "🔒 **تم قفل الدردشة بنجاح!**")
-                    except Exception:
-                        pass
-                    return
-                if text == "فتح الدردشة" and is_admin:
-                    try:
-                        sub_bot.set_chat_permissions(chat_id, ChatPermissions(can_send_messages=True, can_send_media_messages=True))
-                        sub_bot.reply_to(msg, "🔓 **تم فتح الدردشة بنجاح!**")
-                    except Exception:
-                        pass
-                    return
-                if text == "كت":
-                    sub_bot.reply_to(msg, f"❓ **سؤال كت:**\n\n{random.choice(CAT_QUESTIONS)}")
-                    return
-                if text.startswith("يوت"):
-                    query = text.replace("يوت", "", 1).strip()
-                    if query:
-                        sub_bot.reply_to(msg, f"🔍 **نتائج بحث اليوتيوب:**\nhttps://www.youtube.com/results?search_query={query.replace(' ', '+')}")
+                    sb.reply_to(msg, caption)
                     return
 
-            sub_bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+                if text in ("تغ", "تغيير", "تغير"):
+                    sb.reply_to(msg, f"🎨 تم تغيير ستايل الآيدي:\n{random.choice(ID_STYLES)}")
+                    return
+
+                if text in ("رابط", "ر"):
+                    try:
+                        sb.reply_to(msg, f"🔗 رابط المجموعة:\n{sb.export_chat_invite_link(cid)}")
+                    except Exception:
+                        sb.reply_to(msg, "⚠️ ارفع البوت مشرفاً مع صلاحية دعوة المستخدمين.")
+                    return
+
+                if text in ("همسة", "همسه"):
+                    target = replied_user(msg)
+                    if not target:
+                        sb.reply_to(msg, "⚠️ استخدم الأمر بالرد على رسالة العضو.")
+                        return
+                    if target.id in (uid, me.id):
+                        sb.reply_to(msg, "⚠️ لا يمكنك إرسال همسة لنفسك أو للبوت.")
+                        return
+                    name = target.first_name.replace(" ", "_")
+                    markup = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("اكتب الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper_{target.id}_{cid}_{name}")
+                    ]])
+                    sb.reply_to(msg, "🔒 اضغط الزر لكتابة الهمسة في الخاص.", reply_markup=markup)
+                    return
+
+                if text == "تفعيل الترحيب" and is_admin:
+                    welcomes[cid] = True
+                    sb.reply_to(msg, "✅ تم تفعيل الترحيب.")
+                    return
+                if text == "تعطيل الترحيب" and is_admin:
+                    welcomes[cid] = False
+                    sb.reply_to(msg, "⛔ تم تعطيل الترحيب.")
+                    return
+
+                # الرتب محلية للبوت ولا ترفع العضو إلى مشرف تيليجرام.
+                rank_cmds = ("رفع مميز", "مم", "م", "تنزيل مميز", "رفع مشرف", "تنزيل مشرف", "رفع مدير", "تنزيل مدير")
+                if text in rank_cmds:
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ هذا الأمر للمالك والمدراء فقط.")
+                        return
+                    target = replied_user(msg)
+                    if not target:
+                        sb.reply_to(msg, "⚠️ رد على رسالة العضو ثم أرسل الأمر.")
+                        return
+                    if target.id == uid or is_dev(target):
+                        sb.reply_to(msg, "⚠️ لا يمكن تغيير رتبة هذا العضو.")
+                        return
+                    desired = "مميز" if text in ("رفع مميز", "مم", "م", "تنزيل مميز") else ("مشرف" if "مشرف" in text else "مدير")
+                    removing = text.startswith("تنزيل")
+                    if desired == "مدير" and rank_of(cid, user) not in ("المطور الأساسي", "مالك"):
+                        sb.reply_to(msg, "⚠️ رفع المدير للمالك أو المطور فقط.")
+                        return
+                    ranks.setdefault(cid, {})
+                    if removing:
+                        ranks[cid].pop(target.id, None)
+                        sb.reply_to(msg, f"✅ تم تنزيل رتبة {target.first_name}.")
+                    else:
+                        ranks[cid][target.id] = desired
+                        sb.reply_to(msg, f"✅ تم رفع {target.first_name} إلى رتبة {desired} داخل البوت.")
+                    return
+
+                list_map = {
+                    "المكتومين": muted, "المطرودين": kicked,
+                    "المحظورين": banned, "المقيدين": restricted
+                }
+                if text == "المميزين":
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ للمدراء فقط.")
+                    else:
+                        ids = [str(uid2) for uid2, r in ranks.get(cid, {}).items() if r == "مميز"]
+                        sb.reply_to(msg, "📋 المميزين:\n" + ("\n".join(f"• <code>{x}</code>" for x in ids) if ids else "القائمة فارغة."))
+                    return
+                if text in list_map:
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ للمدراء فقط.")
+                    else:
+                        sb.reply_to(msg, f"📋 {text}:\n{get_ids(list_map[text], cid)}")
+                    return
+
+                clear_map = {
+                    "مسح المكتومين": muted, "مسح المطرودين": kicked,
+                    "مسح المحظورين": banned, "مسح المقيدين": restricted
+                }
+                if text in clear_map:
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ المسح للمدراء فقط.")
+                    else:
+                        store = clear_map[text]
+                        count = len(store.get(cid, set()))
+                        store[cid] = set()
+                        sb.reply_to(msg, f"✅ تم مسح سجل {text.replace('مسح ', '')}: {count}.\nهذا يمسح سجل البوت فقط ولا يغيّر حالة تيليجرام.")
+                    return
+                if text == "مسح المميزين":
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ المسح للمدراء فقط.")
+                    else:
+                        old = ranks.get(cid, {})
+                        count = sum(1 for r in old.values() if r == "مميز")
+                        ranks[cid] = {u: r for u, r in old.items() if r != "مميز"}
+                        sb.reply_to(msg, f"✅ تم حذف رتبة مميز من {count} عضو.")
+                    return
+
+                lock_map = {
+                    "قفل الدردشة": ("chat", True), "فتح الدردشة": ("chat", False),
+                    "قفل الروابط": ("links", True), "فتح الروابط": ("links", False),
+                    "قفل الصور": ("photos", True), "فتح الصور": ("photos", False),
+                    "قفل الفيديو": ("videos", True), "فتح الفيديو": ("videos", False),
+                    "قفل الملفات": ("documents", True), "فتح الملفات": ("documents", False),
+                    "قفل التكرار": ("repeat", True), "فتح التكرار": ("repeat", False),
+                    "قفل التوجيه": ("forward", True), "فتح التوجيه": ("forward", False)
+                }
+                if text in lock_map:
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ هذا الأمر للمدراء فقط.")
+                        return
+                    feature, enabled = lock_map[text]
+                    settings.setdefault(cid, {})[feature] = enabled
+                    if feature == "chat":
+                        try:
+                            sb.set_chat_permissions(cid, ChatPermissions(
+                                can_send_messages=not enabled,
+                                can_send_photos=not enabled,
+                                can_send_videos=not enabled,
+                                can_send_documents=not enabled
+                            ))
+                        except Exception:
+                            sb.reply_to(msg, "⚠️ تعذر تعديل صلاحيات المجموعة؛ تحقق من صلاحيات البوت.")
+                            return
+                    sb.reply_to(msg, f"✅ تم {'قفل' if enabled else 'فتح'} {feature}.")
+                    return
+
+                moderation = {
+                    "إلغاء تقييد": "unrestrict", "رفع القيود": "unrestrict",
+                    "إلغاء حظر": "unban", "إلغاء كتم": "unmute",
+                    "تقييد": "restrict", "إنذار": "warn", "طرد": "kick",
+                    "حظر": "ban", "كتم": "mute"
+                }
+                matched = next((name for name in sorted(moderation, key=len, reverse=True)
+                                if text == name or text.startswith(name + " ")), None)
+                if matched:
+                    if not is_admin:
+                        sb.reply_to(msg, "⚠️ أوامر الإدارة للمدراء فقط.")
+                        return
+                    target = target_user(msg, parts)
+                    if not target:
+                        sb.reply_to(msg, "⚠️ رد على رسالة العضو أو اكتب الآيدي بعد الأمر.")
+                        return
+                    if target.id == uid or is_dev(target):
+                        sb.reply_to(msg, "⚠️ لا يمكن تنفيذ هذا الإجراء على نفسك أو المطور.")
+                        return
+                    try:
+                        tm = sb.get_chat_member(cid, target.id)
+                        if tm.status in ("creator", "administrator"):
+                            sb.reply_to(msg, "❌ لا يمكن تنفيذ الإجراء على مالك أو مشرف تيليجرام.")
+                            return
+                    except Exception:
+                        pass
+                    action = moderation[matched]
+                    try:
+                        if action == "kick":
+                            sb.ban_chat_member(cid, target.id)
+                            sb.unban_chat_member(cid, target.id)
+                            kicked.setdefault(cid, set()).add(target.id)
+                            answer = "🥾 تم طرد العضو."
+                        elif action == "ban":
+                            sb.ban_chat_member(cid, target.id)
+                            banned.setdefault(cid, set()).add(target.id)
+                            answer = "⛔ تم حظر العضو."
+                        elif action == "unban":
+                            sb.unban_chat_member(cid, target.id)
+                            banned.setdefault(cid, set()).discard(target.id)
+                            answer = "✅ تم إلغاء الحظر."
+                        elif action == "mute":
+                            sb.restrict_chat_member(cid, target.id, ChatPermissions(can_send_messages=False))
+                            muted.setdefault(cid, set()).add(target.id)
+                            answer = "🔇 تم كتم العضو."
+                        elif action in ("unmute", "unrestrict"):
+                            sb.restrict_chat_member(cid, target.id, ChatPermissions(
+                                can_send_messages=True, can_send_photos=True, can_send_videos=True,
+                                can_send_documents=True, can_send_audios=True, can_send_voice_notes=True,
+                                can_send_video_notes=True, can_send_other_messages=True,
+                                can_add_web_page_previews=True
+                            ))
+                            muted.setdefault(cid, set()).discard(target.id)
+                            restricted.setdefault(cid, set()).discard(target.id)
+                            answer = "🔓 تم رفع القيود عن العضو."
+                        elif action == "restrict":
+                            sb.restrict_chat_member(cid, target.id, ChatPermissions(
+                                can_send_messages=False, can_send_photos=False,
+                                can_send_videos=False, can_send_documents=False
+                            ))
+                            restricted.setdefault(cid, set()).add(target.id)
+                            answer = "🔒 تم تقييد العضو."
+                        else:
+                            key = (cid, target.id)
+                            warnings[key] = warnings.get(key, 0) + 1
+                            answer = f"⚠️ تم إنذار العضو. عدد الإنذارات: {warnings[key]}"
+                        sb.reply_to(msg, answer)
+                    except Exception:
+                        sb.reply_to(msg, "❌ تعذر تنفيذ الأمر. تأكد أن البوت مشرف ويملك الصلاحيات اللازمة.")
+                    return
+
+                if text == "تثبيت" and is_admin and msg.reply_to_message:
+                    try:
+                        sb.pin_chat_message(cid, msg.reply_to_message.message_id)
+                        sb.reply_to(msg, "📌 تم تثبيت الرسالة.")
+                    except Exception:
+                        sb.reply_to(msg, "⚠️ تعذر التثبيت؛ تحقق من صلاحيات البوت.")
+                    return
+                if text == "إلغاء التثبيت" and is_admin:
+                    try:
+                        sb.unpin_all_chat_messages(cid)
+                        sb.reply_to(msg, "✅ تم إلغاء تثبيت الرسائل.")
+                    except Exception:
+                        sb.reply_to(msg, "⚠️ تعذر إلغاء التثبيت.")
+                    return
+
+                if text == "كت":
+                    sb.reply_to(msg, "❓ سؤال كت:\n\n" + random.choice(QUESTIONS))
+                    return
+                if text.startswith("يوت"):
+                    query = text[3:].strip()
+                    if query:
+                        sb.reply_to(msg, "🔎 نتائج يوتيوب:\nhttps://www.youtube.com/results?search_query=" + quote_plus(query))
+                    return
+                fun = {
+                    "جمالي": "✨ الجمال الحقيقي بالأخلاق والروح الحلوة.",
+                    "الحب": "🤍 الحب احترام وصدق واهتمام.",
+                    "الكره": "🌿 لا تخلي الكره ياخذ من راحتك.",
+                    "الرجولة": "🦅 الرجولة مواقف وأخلاق ومسؤولية.",
+                    "الأنوثة": "🌸 الرقي بالأخلاق والثقة بالنفس.",
+                    "اقتباس": "✨ كل يوم فرصة جديدة حتى تصير أفضل.",
+                    "شعر": "🌙 للكلمة الحلوة مكان بالقلب.",
+                    "قرآن": "🕌 تذكّر أن الطمأنينة بذكر الله."
+                }
+                if text in fun:
+                    sb.reply_to(msg, fun[text])
+
+            sb.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
         except Exception:
             time.sleep(5)
 
-@bot.message_handler(commands=['start'])
-def start_handler(msg):
-    if msg.chat.type == 'private':
-        WAITING_FOR_TOKEN.discard(msg.from_user.id)
-        start_text = (
-            "⌔︙أهـلا بـك في مصنع بـوتات حماية سجين الحقيقي ⚡\n"
-            "⌔︙هذا البوت مخصص لصنع وإدارة بوتات الحماية الفرعية التشغيلية.\n"
-            "⌔︙الحد الأقصى للبوتات هو `3 بوتات`.\n"
-            "⌔︙اختر ما تحب من الأزرار بالأسفل 👇"
-        )
-        bot.send_message(msg.chat.id, start_text, reply_markup=MAKER_KEYBOARD)
 
-@bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user and msg.from_user.id in WAITING_FOR_TOKEN, content_types=['text'])
-def receive_token_handler(msg):
-    user_id = msg.from_user.id
-    text = (msg.text or "").strip()
-    if text.startswith('/'):
-        bot.reply_to(msg, "⚠️ يرجى إرسال توكن صالح للبوت أو اضغط /start للإلغاء.")
+@bot.message_handler(commands=["start"])
+def start_handler(msg):
+    if msg.chat.type == "private":
+        WAITING_FOR_TOKEN.discard(msg.from_user.id)
+        bot.send_message(msg.chat.id,
+            f"أهلاً بك في مصنع بوتات سجين ⚡\nالحد الأقصى: {MAX_BOTS} بوتات.\nاختر من القائمة:",
+            reply_markup=MAKER_KEYBOARD)
+
+
+@bot.message_handler(
+    func=lambda m: m.chat.type == "private" and m.from_user and m.from_user.id in WAITING_FOR_TOKEN,
+    content_types=["text"]
+)
+def receive_token(msg):
+    uid = msg.from_user.id
+    token = (msg.text or "").strip()
+    if token.startswith("/"):
+        bot.reply_to(msg, "أرسل توكن البوت من BotFather أو /start للإلغاء.")
         return
     try:
-        test_bot = telebot.TeleBot(text)
-        info = test_bot.get_me()
-        username = f"@{info.username}"
-        if user_id not in USER_BOTS:
-            USER_BOTS[user_id] = []
-        if any(item['bot_token'] == text for item in USER_BOTS[user_id]):
-            WAITING_FOR_TOKEN.discard(user_id)
-            bot.reply_to(msg, "⚠️ **هذا البوت مصنوع مسبقاً وموجود في قائمة بوتاتك!**")
+        test = telebot.TeleBot(token)
+        info = test.get_me()
+        items = USER_BOTS.setdefault(uid, [])
+        if len(items) >= MAX_BOTS:
+            WAITING_FOR_TOKEN.discard(uid)
+            bot.reply_to(msg, "وصلت للحد الأقصى من البوتات.")
             return
-        USER_BOTS[user_id].append({"bot_name": info.first_name, "bot_username": username, "bot_token": text})
-        if text not in RUNNING_SUB_BOTS:
-            thread = threading.Thread(target=run_sub_bot, args=(text,), daemon=True)
+        if any(x["token"] == token for x in items):
+            WAITING_FOR_TOKEN.discard(uid)
+            bot.reply_to(msg, "هذا البوت مسجل عندك مسبقاً.")
+            return
+        items.append({"name": info.first_name, "username": f"@{info.username}", "token": token})
+        if token not in RUNNING_SUB_BOTS:
+            thread = threading.Thread(target=run_sub_bot, args=(token,), daemon=True)
             thread.start()
-            RUNNING_SUB_BOTS[text] = thread
-        WAITING_FOR_TOKEN.discard(user_id)
-        markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
-            [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
-        ])
+            RUNNING_SUB_BOTS[token] = thread
+        WAITING_FOR_TOKEN.discard(uid)
         bot.send_message(msg.chat.id,
-            f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح!**\n\n🤖 **يوزر البوت:** {username}\n📌 **اسم البوت:** {info.first_name}\n\nالبوت يعمل الآن.",
-            reply_markup=markup)
+            f"✅ تم تشغيل البوت الفرعي.\nالاسم: {info.first_name}\nاليوزر: @{info.username}",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
+                [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
+            ]))
     except Exception:
-        bot.reply_to(msg, "❌ **التوكن غير صحيح أو منتهي الصلاحية!**\nتأكد من توكن البوت الحقيقي من `@BotFather`.")
+        bot.reply_to(msg, "❌ التوكن غير صحيح أو لا يمكن الوصول للبوت. تأكد منه من BotFather.")
+
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_handlers(call):
-    user_id = call.from_user.id
+def callbacks(call):
+    uid = call.from_user.id
+    if call.data.startswith("delete_bot:"):
+        try:
+            _, owner_s, index_s = call.data.split(":")
+            owner, index = int(owner_s), int(index_s)
+        except Exception:
+            bot.answer_callback_query(call.id, "طلب غير صالح.")
+            return
+        if owner != uid:
+            bot.answer_callback_query(call.id, "هذه القائمة ليست لك.", show_alert=True)
+            return
+        items = USER_BOTS.get(uid, [])
+        if 0 <= index < len(items):
+            deleted = items.pop(index)
+            bot.answer_callback_query(call.id, "تم حذف السجل.")
+            bot.edit_message_text(
+                f"تم حذف {deleted['username']} من القائمة. هذا لا يوقف عامله الذي بدأ بالفعل.",
+                call.message.chat.id, call.message.message_id,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
+                    [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
+                ]))
+        return
+
     bot.answer_callback_query(call.id)
     if call.data == "create_bot":
-        if len(USER_BOTS.get(user_id, [])) >= 3:
-            markup = InlineKeyboardMarkup([
-                [InlineKeyboardButton("تواصل لتفعيل VIP 💎", url="https://t.me/M_C_67")],
-                [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
-            ])
-            bot.edit_message_text("❌ **وصلت للحد الأقصى (3 بوتات فرعية)!**\n\n💎 لتفعيل VIP تواصل مع المطور @M_C_67",
-                                  call.message.chat.id, call.message.message_id, reply_markup=markup)
+        if len(USER_BOTS.get(uid, [])) >= MAX_BOTS:
+            bot.edit_message_text("وصلت للحد الأقصى (3 بوتات). تواصل مع المطور لتفعيل VIP.",
+                call.message.chat.id, call.message.message_id,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("تواصل مع المطور 💎", url=DEV_LINK)],
+                    [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
+                ]))
         else:
-            WAITING_FOR_TOKEN.add(user_id)
-            markup = InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء 🔙", callback_data="back_start")]])
-            bot.edit_message_text("⚙️ **خطوات صنع بوت فرعي:**\n\n1️⃣ أنشئ بوتاً من `@BotFather`.\n2️⃣ انسخ التوكن.\n3️⃣ أرسله هنا لتشغيل البوت تلقائياً.",
-                                  call.message.chat.id, call.message.message_id, reply_markup=markup)
+            WAITING_FOR_TOKEN.add(uid)
+            bot.edit_message_text("أنشئ بوتاً من @BotFather ثم أرسل التوكن هنا.",
+                call.message.chat.id, call.message.message_id,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("إلغاء 🔙", callback_data="back_start")]]))
     elif call.data == "my_bots":
-        items = USER_BOTS.get(user_id, [])
+        items = USER_BOTS.get(uid, [])
+        text = f"📂 بوتاتك ({len(items)}/{MAX_BOTS}):\n\n"
+        markup = InlineKeyboardMarkup()
+        for i, item in enumerate(items):
+            text += f"{i+1}. {item['name']} — {item['username']}\n"
+            markup.add(InlineKeyboardButton(f"حذف {item['username']} 🗑️", callback_data=f"delete_bot:{uid}:{i}"))
         if not items:
-            bot.edit_message_text("📂 **قائمة بوتاتك:**\n\n❌ لا يوجد بوتات مصنوعة حالياً!",
-                                  call.message.chat.id, call.message.message_id,
-                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]]))
-        else:
-            text = f"📂 **قائمة بوتاتك ({len(items)}/3):**\n\n"
-            markup = InlineKeyboardMarkup()
-            for index, item in enumerate(items):
-                text += f"{index+1}⌯ البوت: `{item['bot_name']}`\n🔗 اليوزر: {item['bot_username']}\n\n"
-                markup.add(InlineKeyboardButton(f"حذف {item['bot_username']} 🗑️", callback_data=f"delete_bot_{user_id}_{index}"))
-            markup.add(InlineKeyboardButton("رجوع 🔙", callback_data="back_start"))
-            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            text += "ما عندك بوتات مسجلة في هذه الجلسة."
+        markup.add(InlineKeyboardButton("رجوع 🔙", callback_data="back_start"))
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
     elif call.data == "back_start":
-        WAITING_FOR_TOKEN.discard(user_id)
-        bot.edit_message_text("⌔︙أهـلا بـك في مصنع بـوتات حماية سجين الحقيقي ⚡\n⌔︙اختر ما تحب من الأزرار بالأسفل 👇",
-                              call.message.chat.id, call.message.message_id, reply_markup=MAKER_KEYBOARD)
-    elif call.data.startswith("delete_bot_"):
-        try:
-            _, _, uid, idx = call.data.split("_")
-            uid, idx = int(uid), int(idx)
-        except (ValueError, IndexError):
-            return
-        if uid == user_id and uid in USER_BOTS and 0 <= idx < len(USER_BOTS[uid]):
-            deleted = USER_BOTS[uid].pop(idx)
-            # تنبيه: حذف السجل لا يوقف polling الجاري فعلياً؛ الإيقاف يحتاج آلية منفصلة.
-            bot.edit_message_text(f"✅ **تم حذف البوت ({deleted['bot_username']}) من قائمتك.**",
-                                  call.message.chat.id, call.message.message_id,
-                                  reply_markup=InlineKeyboardMarkup([
-                                      [InlineKeyboardButton("قائمة بوتاتي 📋", callback_data="my_bots")],
-                                      [InlineKeyboardButton("رجوع 🔙", callback_data="back_start")]
-                                  ]))
+        WAITING_FOR_TOKEN.discard(uid)
+        bot.edit_message_text("أهلاً بك في مصنع بوتات سجين ⚡\nاختر من القائمة:",
+            call.message.chat.id, call.message.message_id, reply_markup=MAKER_KEYBOARD)
 
-bot.infinity_polling()
+
+if __name__ == "__main__":
+    bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=30)
