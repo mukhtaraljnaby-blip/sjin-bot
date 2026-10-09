@@ -81,7 +81,6 @@ def run_sub_bot(token):
                 user_id = msg.from_user.id
                 text = msg.text.strip()
                 
-                # إذا دخل عبر زر الهمسة
                 if text.startswith("/start whisper_"):
                     parts = text.split("_")
                     if len(parts) >= 4:
@@ -97,7 +96,7 @@ def run_sub_bot(token):
                         sub_bot.send_message(
                             user_id,
                             f"🔒 **أهلاً بك عزيزي في خاص الهمسات السرية!**\n\n"
-                            f"اكتب نص الهمسة الآن في هذه الرساة، وسيتم إرسالها بشكل سري إلى المجموعة 👇"
+                            f"اكتب نص الهمسة الآن في هذه الرسالة، وسيتم إرسالها بشكل سري إلى المجموعة 👇"
                         )
                         return
 
@@ -194,7 +193,7 @@ def run_sub_bot(token):
             except Exception:
                 sub_bot.reply_to(msg, "❌ حدث خطأ، تأكد أن البوت موجود في المجموعة.")
 
-        @sub_bot.callback_query_handler(func=lambda call: True)
+        @sub_bot.callback_query_handler(func=lambda call: call.data.startswith("read_whisper_"))
         def sub_callback_handlers(call):
             user_id = call.from_user.id
             if call.data.startswith("read_whisper_"):
@@ -251,6 +250,7 @@ def run_sub_bot(token):
             if chat_id not in activated_chats:
                 return
 
+            # --- فحص أمر الهمسة حصرياً بالبداية قبل الردود العامة ---
             if text in ["همسه", "همسة"]:
                 if msg.reply_to_message:
                     target_user = msg.reply_to_message.from_user
@@ -258,17 +258,11 @@ def run_sub_bot(token):
                         sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة لنفسك!")
                         return
                     
-                    # تمرير اسم وتفاصيل الشخص بالرابط للخاص
                     target_safe_name = target_user.first_name.replace(" ", "_")
                     whisper_btn = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("اضغط هنا لكتابة الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper_{target_id}_{chat_id}_{target_safe_name}")]
+                        [InlineKeyboardButton("اضغط هنا لكتابة الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper_{target_user.id}_{chat_id}_{target_safe_name}")]
                     ])
                     
-                    waiting_whispers[user_id] = {
-                        'target_id': target_user.id,
-                        'target_name': target_user.first_name,
-                        'chat_id': chat_id
-                    }
                     sub_bot.reply_to(
                         msg, 
                         f"🔒 **مرحباً [{user_name}](tg://user?id={user_id})**\n\n"
@@ -617,7 +611,7 @@ def receive_token_handler(msg):
             f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح حقيقي!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"البوت يعمل الآن بدون أخطاء الهمسات.",
+            f"البوت يعمل الآن بدون أخطاء.",
             reply_markup=success_markup
         )
     except Exception:
