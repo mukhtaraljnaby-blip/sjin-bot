@@ -81,7 +81,6 @@ def run_sub_bot(token):
                 user_id = msg.from_user.id
                 text = msg.text.strip()
                 
-                # التقاط بيانات الهمسة من رابط الـ start
                 if text.startswith("/start whisper_"):
                     parts = text.split("_")
                     if len(parts) >= 4:
@@ -101,7 +100,6 @@ def run_sub_bot(token):
                         )
                         return
 
-                # رسالة الستارت الاعتيادية
                 if user_id in waiting_whispers:
                     sub_bot.send_message(user_id, "⚠️ بانتظار كتابة نص الهمسة، أرسل النص الآن مباشرة:")
                     return
@@ -125,7 +123,6 @@ def run_sub_bot(token):
                     pass
                 sub_bot.send_message(msg.chat.id, start_caption)
 
-        # استقبال نص الهمسة حصرياً بالخاص للمستخدمين الموجودين بالقائمة المعلقة
         @sub_bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user.id in waiting_whispers)
         def handle_whisper_text_input(msg):
             user_id = msg.from_user.id
@@ -220,10 +217,14 @@ def run_sub_bot(token):
             if chat_id not in activated_chats:
                 return
 
-            # --- فحص أمر الهمسة بالرد ---
+            # --- نظام الهمسات الجديد والمضبوط حصرياً ---
             if text in ["همسه", "همسة"]:
                 if msg.reply_to_message:
                     target_user = msg.reply_to_message.from_user
+                    # منع الرد على رسالة البوت نفسه أو رسالة المرسل نفسه
+                    if target_user.id == me.id:
+                        sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة للبوت!")
+                        return
                     if target_user.id == user_id:
                         sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة لنفسك!")
                         return
@@ -241,7 +242,7 @@ def run_sub_bot(token):
                         reply_markup=whisper_btn
                     )
                 else:
-                    sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة الشخص المراد اهمساً بكلمة (همسة)!")
+                    sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة العضو المراد اهماسه بكلمة (همسة)!")
                 return
 
             if text == "تفع":
@@ -269,7 +270,7 @@ def run_sub_bot(token):
                     "• `ا` أو `ايدي` - عرض ايديك الفخم\n"
                     "• `تغ` أو `تغير` - تغيير ستايل الايدي\n"
                     "• `ر` أو `رابط` - جلب رابط الكروب\n"
-                    "• `همسة` (بالرد) - إرسال همسة سرية لعضو\n"
+                    "• `همسة` (بالرد على العضو) - إرسال همسة سرية\n"
                     "• `كت` - أسئلة كت ترفيهية\n"
                     "• `يوت [كلمة]` - بحث يوتيوب سريع\n\n"
                     "💬 **الردود العامة (50 قسماً شاملاً التفاعلات والحب)**\n\n"
@@ -581,7 +582,7 @@ def receive_token_handler(msg):
             f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح حقيقي!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"البوت يعمل الآن بدون أخطاء.",
+            f"البوت يعمل الآن بدون أي أخطاء.",
             reply_markup=success_markup
         )
     except Exception:
