@@ -190,7 +190,7 @@ def run_sub_bot(token):
                     for n in msg.new_chat_members:
                         sub_bot.send_message(chat_id, f"هلا بيك يا بعد روحي 🌸 [{n.first_name}](tg://user?id={n.id})\nنورت الكروب بوجودك يا عطرها ⚡🖤")
 
-            @sub_bot.message_handler(func=lambda msg: msg.chat.type in ['group', 'supergroup'])
+            @sub_bot.message_handler(content_types=['text'], func=lambda msg: msg.chat.type in ['group', 'supergroup'])
             def sub_group_handler(msg):
                 chat_id = msg.chat.id
                 text = msg.text.strip() if msg.text else ""
@@ -224,6 +224,7 @@ def run_sub_bot(token):
                 if chat_id not in activated_chats:
                     return
 
+                # --- المعالجة الصارمة للردود (الهمسة، الكتم، الطرد، التقيد) لضمان عدم ضياع الـ Reply ---
                 if text in ["همسه", "همسة"]:
                     if msg.reply_to_message and msg.reply_to_message.from_user:
                         target_user = msg.reply_to_message.from_user
@@ -250,30 +251,33 @@ def run_sub_bot(token):
                         sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة العضو المراد اهماسه بكلمة (همسة)!")
                     return
 
-                if (text.startswith("طرد") or text.startswith("كتم") or text.startswith("تقييد")) and is_admin:
-                    if msg.reply_to_message and msg.reply_to_message.from_user:
-                        target_user = msg.reply_to_message.from_user
-                        try:
-                            target_member = sub_bot.get_chat_member(chat_id, target_user.id)
-                            if target_member.status in ['creator', 'administrator'] or target_user.username == "M_C_67":
-                                sub_bot.reply_to(msg, "❌ **لا يمكنني تنفيذ أي إجراء بحق شخص يمتلك رتبة محمية!** 🛡️")
-                                return
-                        except Exception:
-                            pass
-                        try:
-                            if text.startswith("طرد"):
-                                sub_bot.ban_chat_member(chat_id, target_user.id)
-                                sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
-                            elif text.startswith("كتم"):
-                                sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
-                                sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
-                            elif text.startswith("تقييد"):
-                                sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
-                                sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
-                        except Exception:
-                            sub_bot.reply_to(msg, "❌ تأكد أني مشرف وصلاحياتي كاملة لتنفيذ الإجراء.")
+                if text.startswith("طرد") or text.startswith("كتم") or text.startswith("تقييد"):
+                    if is_admin:
+                        if msg.reply_to_message and msg.reply_to_message.from_user:
+                            target_user = msg.reply_to_message.from_user
+                            try:
+                                target_member = sub_bot.get_chat_member(chat_id, target_user.id)
+                                if target_member.status in ['creator', 'administrator'] or target_user.username == "M_C_67":
+                                    sub_bot.reply_to(msg, "❌ **لا يمكنني تنفيذ أي إجراء بحق شخص يمتلك رتبة محمية!** 🛡️")
+                                    return
+                            except Exception:
+                                pass
+                            try:
+                                if text.startswith("طرد"):
+                                    sub_bot.ban_chat_member(chat_id, target_user.id)
+                                    sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
+                                elif text.startswith("كتم"):
+                                    sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
+                                    sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
+                                elif text.startswith("تقييد"):
+                                    sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
+                                    sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
+                            except Exception:
+                                sub_bot.reply_to(msg, "❌ تأكد أني مشرف وصلاحياتي كاملة لتنفيذ الإجراء.")
+                        else:
+                            sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة الشخص المراد تنفيذه لتطبيق الأمر!")
                     else:
-                        sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة الشخص المراد تنفيذه لتطبيق الأمر!")
+                        sub_bot.reply_to(msg, "⚠️ هذه الأوامر مخصصة للمشرفين فقط!")
                     return
 
                 if text == "تفع":
@@ -565,7 +569,6 @@ def receive_token_handler(msg):
         if user_id not in USER_BOTS:
             USER_BOTS[user_id] = []
 
-        # التحقق مما إذا كان التوكن موجود مسبقاً لدى المستخدم لمنع التكرار
         if any(b['bot_token'] == text for b in USER_BOTS[user_id]):
             WAITING_FOR_TOKEN.remove(user_id)
             bot.reply_to(msg, "⚠️ **هذا البوت مصنوع مسبقاً وموجود في قائمة بوتاتك!**")
