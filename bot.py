@@ -73,7 +73,7 @@ def run_sub_bot(token):
         activated_chats = set()
         welcome_settings = {}
         id_photo_settings = {}
-        waiting_whispers = {} 
+        global_whispers_cache = {} # قاموس عام وحفظ دائم للهمسات
 
         @sub_bot.message_handler(commands=['start'])
         def sub_start(msg):
@@ -81,6 +81,7 @@ def run_sub_bot(token):
                 user_id = msg.from_user.id
                 text = msg.text.strip()
                 
+                # استقبال بيانات الهمسة عبر الـ Start Deep Linking وتخزينها فوراً للمستخدم
                 if text.startswith("/start whisper_"):
                     parts = text.split("_")
                     if len(parts) >= 4:
@@ -88,7 +89,7 @@ def run_sub_bot(token):
                         chat_id = int(parts[3])
                         target_name = parts[4].replace("_", " ") if len(parts) > 4 else "العضو"
                         
-                        waiting_whispers[user_id] = {
+                        global_whispers_cache[user_id] = {
                             'target_id': target_id,
                             'target_name': target_name,
                             'chat_id': chat_id
@@ -96,12 +97,13 @@ def run_sub_bot(token):
                         sub_bot.send_message(
                             user_id,
                             f"🔒 **أهلاً بك في خاص الهمسات السرية!**\n\n"
-                            f"ارسل نص الهمسة الآن في هذه الرسالة، وسأقوم بنشرها سراً في المجموعة لـ [{target_name}](tg://user?id={target_id}) 👇"
+                            f"👤 الشخص المراد اهماسه: **{target_name}**\n"
+                            f"✍️ اكتب نص الهمسة الآن في هذه الرسالة، وسأقوم بنشرها سراً في المجموعة 👇"
                         )
                         return
 
-                if user_id in waiting_whispers:
-                    sub_bot.send_message(user_id, "⚠️ بانتظار كتابة نص الهمسة، أرسل النص الآن مباشرة:")
+                if user_id in global_whispers_cache:
+                    sub_bot.send_message(user_id, "⚠️ بانتظار كتابة نص الهمسة، أرسل النص الآن مباشرة في هذه المحادثة:")
                     return
 
                 start_caption = (
@@ -123,22 +125,28 @@ def run_sub_bot(token):
                     pass
                 sub_bot.send_message(msg.chat.id, start_caption)
 
-        @sub_bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user.id in waiting_whispers)
+        # استقبال نص الهمسة بالخاص وإرسالها فوراً للمجموعة بدقة تامة
+        @sub_bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user.id in global_whispers_cache)
         def handle_whisper_text_input(msg):
             user_id = msg.from_user.id
-            data = waiting_whispers[user_id]
-            whisper_text = msg.text.strip()
+            whisper_data = global_whispers_cache.get(user_id)
             
+            if not whisper_data:
+                sub_bot.reply_to(msg, "⚠️ انتهت صلاحية جلسة الهمسة، اضغط على زر الهمسة من المجموعة مجدداً.")
+                return
+
+            whisper_text = msg.text.strip() if msg.text else ""
             if whisper_text.startswith('/'):
-                sub_bot.reply_to(msg, "⚠️ يرجى إرسال نص الهمسة بشكل طبيعي وليس كأمر.")
+                sub_bot.reply_to(msg, "⚠️ يرجى إرسال نص الهمسة بشكل طبيعي وليس كأمر تليجرام.")
                 return
             
-            target_id = data['target_id']
-            target_name = data['target_name']
-            chat_id = data['chat_id']
+            target_id = whisper_data['target_id']
+            target_name = whisper_data['target_name']
+            chat_id = whisper_data['chat_id']
             sender_name = msg.from_user.first_name
 
-            del waiting_whispers[user_id]
+            # مسح البيانات لعدم تكرار الإرسال بالخطأ
+            del global_whispers_cache[user_id]
 
             whisper_markup = InlineKeyboardMarkup([
                 [InlineKeyboardButton("💬 اضغط لقراءة الهمسة السرية", callback_data=f"read_whisper_{user_id}_{target_id}")]
@@ -158,8 +166,8 @@ def run_sub_bot(token):
                 sub_bot.whisper_store[f"{user_id}_{target_id}"] = whisper_text
 
                 sub_bot.reply_to(msg, "✅ **تم إرسال همستك السرية إلى المجموعة بنجاح!** 🤫✨")
-            except Exception:
-                sub_bot.reply_to(msg, "❌ حدث خطأ، تأكد أن البوت موجود في المجموعة ولم يتم طرده.")
+            except Exception as e:
+                sub_bot.reply_to(msg, f"❌ حدث خطأ أثناء إرسال الهمسة للمجموعة. تأكد أن البوت موجود فيها.\nالتفاصيل: {e}")
 
         @sub_bot.callback_query_handler(func=lambda call: call.data.startswith("read_whisper_"))
         def sub_callback_handlers(call):
@@ -217,11 +225,10 @@ def run_sub_bot(token):
             if chat_id not in activated_chats:
                 return
 
-            # --- نظام الهمسات الجديد والمضبوط حصرياً ---
+            # --- معالجة الهمسة بالرد على العضو ---
             if text in ["همسه", "همسة"]:
-                if msg.reply_to_message:
+                if msg.reply_to_message and msg.reply_to_message.from_user:
                     target_user = msg.reply_to_message.from_user
-                    # منع الرد على رسالة البوت نفسه أو رسالة المرسل نفسه
                     if target_user.id == me.id:
                         sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة للبوت!")
                         return
@@ -243,6 +250,33 @@ def run_sub_bot(token):
                     )
                 else:
                     sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة العضو المراد اهماسه بكلمة (همسة)!")
+                return
+
+            # --- أوامر الإدارة (كتم، طرد، تقييد) ---
+            if (text.startswith("طرد") or text.startswith("كتم") or text.startswith("تقييد")) and is_admin:
+                if msg.reply_to_message and msg.reply_to_message.from_user:
+                    target_user = msg.reply_to_message.from_user
+                    try:
+                        target_member = sub_bot.get_chat_member(chat_id, target_user.id)
+                        if target_member.status in ['creator', 'administrator'] or target_user.username == "M_C_67":
+                            sub_bot.reply_to(msg, "❌ **لا يمكنني تنفيذ أي إجراء بحق شخص يمتلك رتبة محمية!** 🛡️")
+                            return
+                    except Exception:
+                        pass
+                    try:
+                        if text.startswith("طرد"):
+                            sub_bot.ban_chat_member(chat_id, target_user.id)
+                            sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
+                        elif text.startswith("كتم"):
+                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
+                            sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
+                        elif text.startswith("تقييد"):
+                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
+                            sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
+                    except Exception:
+                        sub_bot.reply_to(msg, "❌ تأكد أني مشرف وصلاحياتي كاملة لتنفيذ الإجراء.")
+                else:
+                    sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة الشخص المراد تنفيذه لتطبيق الأمر!")
                 return
 
             if text == "تفع":
@@ -499,32 +533,6 @@ def run_sub_bot(token):
                     sub_bot.reply_to(msg, f"🔍 **نتائج بحث اليوتيوب:**\nhttps://www.youtube.com/results?search_query={query.replace(' ', '+')}")
                 return
 
-            if (text.startswith("طرد") or text.startswith("كتم") or text.startswith("تقييد")) and is_admin:
-                if msg.reply_to_message:
-                    target_user = msg.reply_to_message.from_user
-                    try:
-                        target_member = sub_bot.get_chat_member(chat_id, target_user.id)
-                        if target_member.status in ['creator', 'administrator'] or target_user.username == "M_C_67":
-                            sub_bot.reply_to(msg, "❌ **لا يمكنني تنفيذ أي إجراء بحق شخص يمتلك رتبة محمية!** 🛡️")
-                            return
-                    except Exception:
-                        pass
-                    try:
-                        if text.startswith("طرد"):
-                            sub_bot.ban_chat_member(chat_id, target_user.id)
-                            sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
-                        elif text.startswith("كتم"):
-                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
-                            sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
-                        elif text.startswith("تقييد"):
-                            sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
-                            sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
-                    except Exception:
-                        sub_bot.reply_to(msg, "❌ تأكد أني مشرف وصلاحياتي كاملة لتنفيذ الإجراء.")
-                else:
-                    sub_bot.reply_to(msg, "⚠️ رد على رسالة الشخص المراد تنفيذه لتطبيق الأمر!")
-                return
-
         sub_bot.infinity_polling(skip_pending=True)
     except Exception:
         pass
@@ -582,7 +590,7 @@ def receive_token_handler(msg):
             f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح حقيقي!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"البوت يعمل الآن بدون أي أخطاء.",
+            f"البوت يعمل الآن بدون أي أخطاء بالهمسات والخاص.",
             reply_markup=success_markup
         )
     except Exception:
