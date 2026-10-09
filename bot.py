@@ -59,7 +59,7 @@ ID_STYLES = [
     "🚀 ─── • ⦗ هويتك بالكروب ⦘ • ─── 🚀", "👑 ───── ❖ ⦗ بطاقة الملوك ⦘ ───── 👑", "💫 ━━━ ≪ كرت التعريف الخاص ≫ ━━━ 💫",
     "⚜️ ─── • [ ايدي سجين ] • ─── ⚜️", "🔹 ════════ ≪ هويتك ≫ ════════ 🔹", "🌠 ───── ❖ ⦗ بطاقتك ⦘ ───── 🌠",
     "🎯 ─── • ⦗ ايدي الفخم ⦘ • ─── 🎯", "🔮 ═════ ≪ كرت العضو ≫ ═════ 🔮", "⚡ ───── ❖ ⦗ الهوية ⦘ ───── ⚡",
-    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ───── ⚓",
+    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ⚓",
     "🌙 ─── • [ كرت الهوية ] • ─── 🌙", "🔥 ═════ ≪ هويتك الأسطورية ≫ ═════ 🔥"
 ]
 
@@ -73,10 +73,49 @@ def run_sub_bot(token):
         activated_chats = set()
         welcome_settings = {}
         id_photo_settings = {}
+        waiting_whispers = {} # {sender_id: {'target_id': target_id, 'target_name': target_name, 'chat_id': chat_id}}
 
         @sub_bot.message_handler(commands=['start'])
         def sub_start(msg):
             if msg.chat.type == 'private':
+                user_id = msg.from_user.id
+                if user_id in waiting_whispers:
+                    data = waiting_whispers[user_id]
+                    whisper_text = msg.text.strip()
+                    if whisper_text.startswith('/'):
+                        sub_bot.reply_to(msg, "⚠️ يرجى إرسال نص الهمسة بشكل طبيعي وليس أمر.")
+                        return
+                    
+                    target_id = data['target_id']
+                    target_name = data['target_name']
+                    chat_id = data['chat_id']
+                    sender_name = msg.from_user.first_name
+
+                    del waiting_whispers[user_id]
+
+                    whisper_markup = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("💬 اضغط لقراءة الهمسة السرية", callback_data=f"read_whisper_{user_id}_{target_id}")]
+                    ])
+                    
+                    try:
+                        sub_bot.send_message(
+                            chat_id,
+                            f"🔒 **هـمسـة سـريـة جديدة!**\n\n"
+                            f"👤 المرسل: [{sender_name}](tg://user?id={user_id})\n"
+                            f"🎯 المرسل إليه: [{target_name}](tg://user?id={target_id})\n\n"
+                            f"فقط الشخص المعني يمكنه قراءة الهمسة بالضغط على الزر أدناه 👇",
+                            reply_markup=whisper_markup
+                        )
+                        # تخزين نص الهمسة مؤقتاً بالذاكرة المؤقتة للبوكس
+                        if not hasattr(sub_bot, 'whisper_store'):
+                            sub_bot.whisper_store = {}
+                        sub_bot.whisper_store[f"{user_id}_{target_id}"] = whisper_text
+
+                        sub_bot.reply_to(msg, "✅ **تم إرسال همستك السرية إلى المجموعة بنجاح!** 🤫✨")
+                    except Exception:
+                        sub_bot.reply_to(msg, "❌ حدث خطأ، ربما تم طرد البوت من المجموعة أو توقفت الصلاحيات.")
+                    return
+
                 start_caption = (
                     f"⌔︙أهـلا بـك في بـوت ﴿ {bot_name} ﴾\n"
                     f"⌔︙لحماية المجموعات من التفليش 🛡️\n"
@@ -96,12 +135,48 @@ def run_sub_bot(token):
                     pass
                 sub_bot.send_message(msg.chat.id, start_caption)
 
+        @sub_bot.callback_query_handler(func=lambda call: call.data.startswith("read_whisper_") or call.data.startswith("whisper_start_"))
+        def sub_callback_whispers(call):
+            if call.data.startswith("whisper_start_"):
+                parts = call.data.split("_")
+                target_id = int(parts[2])
+                chat_id = int(parts[3])
+                user_id = call.from_user.id
+                
+                if user_id != target_id:
+                    sub_bot.answer_callback_query(call.id, "❌ هذه الهمسة ليست موجهة لك!", show_alert=True)
+                    return
+                
+                target_name = call.from_user.first_name
+                waiting_whispers[user_id] = {
+                    'target_id': target_id,
+                    'target_name': target_name,
+                    'chat_id': chat_id
+                }
+                sub_bot.answer_callback_query(call.id, "✅ تم نقلك للخاص، أرسل نص الهمسة الآن 💬", show_alert=True)
+                return
+
+            if call.data.startswith("read_whisper_"):
+                parts = call.data.split("_")
+                sender_id = int(parts[2])
+                target_id = int(parts[3])
+                user_id = call.from_user.id
+
+                if user_id not in [sender_id, target_id] and not (call.from_user.username == "M_C_67"):
+                    sub_bot.answer_callback_query(call.id, "❌ عذراً، هذه الهمسة سرية وليست مخصصة لك!", show_alert=True)
+                    return
+
+                store_key = f"{sender_id}_{target_id}"
+                text_content = getattr(sub_bot, 'whisper_store', {}).get(store_key, "⚠️ انتهت صلاحية الهمسة أو تم حذفها.")
+                sub_bot.answer_callback_query(call.id, f"📝 نص الهمسة: {text_content}", show_alert=True)
+                return
+
         @sub_bot.message_handler(content_types=['new_chat_members'])
         def sub_welcome(msg):
             chat_id = msg.chat.id
             if chat_id in activated_chats and welcome_settings.get(chat_id, True):
                 for n in msg.new_chat_members:
-                    sub_bot.send_message(chat_id, f"هلا بيك يا وردة 🌸 [{n.first_name}](tg://user?id={n.id})\nنورت الكروب بوجودك ⚡🖤")
+                    sub_bot.send_message(chat_id, f"هلا بيك يا بعد روحي 🌸 [{n.first_name}](tg://user?id={n.id})\nنورت الكروب بوجودك يا عطرها ⚡🖤")
 
         @sub_bot.message_handler(func=lambda msg: msg.chat.type in ['group', 'supergroup'])
         def sub_group_handler(msg):
@@ -137,6 +212,33 @@ def run_sub_bot(token):
             if chat_id not in activated_chats:
                 return
 
+            if text in ["همسه", "همسة"]:
+                if msg.reply_to_message:
+                    target_user = msg.reply_to_message.from_user
+                    if target_user.id == user_id:
+                        sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة لنفسك!")
+                        return
+                    
+                    whisper_btn = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("اضغط هنا لكتابة الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper")]
+                    ])
+                    # تسجيل مؤقت للمرسل والهدف
+                    waiting_whispers[user_id] = {
+                        'target_id': target_user.id,
+                        'target_name': target_user.first_name,
+                        'chat_id': chat_id
+                    }
+                    sub_bot.reply_to(
+                        msg, 
+                        f"🔒 **مرحباً [{user_name}](tg://user?id={user_id})**\n\n"
+                        f"لقد طلبت إرسال همسة إلى [{target_user.first_name}](tg://user?id={target_user.id})\n"
+                        f"اضغط على الزر أدناه للدخول للخاص وكتابة الهمسة السرية 👇", 
+                        reply_markup=whisper_btn
+                    )
+                else:
+                    sub_bot.reply_to(msg, "⚠️ يجب الرد على رسالة الشخص المراد اهماسه بكلمة (همسة)!")
+                return
+
             if text == "تفع":
                 if is_admin:
                     id_photo_settings[chat_id] = True
@@ -162,47 +264,168 @@ def run_sub_bot(token):
                     "• `ا` أو `ايدي` - عرض ايديك الفخم\n"
                     "• `تغ` أو `تغير` - تغيير ستايل الايدي\n"
                     "• `ر` أو `رابط` - جلب رابط الكروب\n"
+                    "• `همسة` (بالرد) - إرسال همسة سرية لعضو\n"
                     "• `كت` - أسئلة كت ترفيهية\n"
                     "• `يوت [كلمة]` - بحث يوتيوب سريع\n\n"
-                    "💬 **الردود العامة التفاعلية:**\n"
-                    "• (احبك، فديتك، هلاو، شلونك، عمي، روحي، بوت، ...)\n\n"
+                    "💬 **الردود العامة (50 قسماً شاملاً التفاعلات والحب)**\n\n"
                     "🛠️ **أوامر المدراء:**\n"
                     "• `تفعيل` / `تعطيل`\n"
-                    "• `تفع` / `تعط` (صورة الايدي)\n"
-                    "• `تفعيل الترحيب` / `تعطيل الترحيب`\n"
                     "• `طرد` / `كتم` / `تقييد` (بالرد)\n"
                     "• `قفل الدردشة` / `فتح الدردشة`"
                 )
                 sub_bot.reply_to(msg, commands_text)
                 return
 
-            # الردود العامة التفاعلية الشاملة
-            if text in ["احبك", "أحبك", "احبج", "أحبج"]:
+            # --- الـ 50 قسماً للردود العامة والغزلية والتفاعلية العراقية ---
+            if text in ["السلام عليكم", "السلام", "سلام عليكم"]:
+                sub_bot.reply_to(msg, "وعليكم السلام ورحمة الله وبركاته يا هلا بـ ريحة هلي 🤍✨")
+                return
+            elif text in ["وعليكم السلام", "وعليكم السلام ورحمة الله"]:
+                sub_bot.reply_to(msg, "يا هلا بطاريكم نورتوا الكروب والله 🌸")
+                return
+            elif text in ["احبك", "أحبك", "احبج", "أحبج", "اموت عليك"]:
                 sub_bot.reply_to(msg, "عشكتك روح وجسد يا بعد بيتي وعافيتي أنت 🤍✨")
                 return
-            elif text in ["فديتك", "فديتاس", "فديتج"]:
-                sub_bot.reply_to(msg, "فداك الكون وگلبي يا بعد روحي أنت 🖤⚡")
+            elif text in ["فديتك", "فديتاس", "فديتج", "فدوه"]:
+                sub_bot.reply_to(msg, "فداك الكون وگلبي وعمري يا بعد روحي أنت 🖤⚡")
                 return
-            elif text in ["هلاو", "هلا", "هلو", "السلام عليكم"]:
-                sub_bot.reply_to(msg, "هلا بيك يا بعد روحي ونبض گلبـي 🌸⚡")
+            elif text in ["هلاو", "هلا", "هلو", "هايات", "هلوز"]:
+                sub_bot.reply_to(msg, "هلا بيك يا بعد روحي ونبض گلبـي، منور 🌸⚡")
                 return
-            elif text in ["شلونك", "شلونج", "شخباركم"]:
-                sub_bot.reply_to(msg, "بخير دامك أنت بخير يا غالي 🤍")
+            elif text in ["شلونك", "شلونج", "شخباركم", "شلونكم"]:
+                sub_bot.reply_to(msg, "بخير دام عيونك الحلوة بخير يا غالي 🤍")
                 return
-            elif text in ["عمي", "تاج راسي"]:
-                sub_bot.reply_to(msg, "حبيبي الغالي تاج راس الكل أنت 👑🖤")
+            elif text in ["عمي", "تاج راسي", "الشيخ"]:
+                sub_bot.reply_to(msg, "حبيبي الغالي تاج راس الكل أنت وفدوه لك الكل 👑🖤")
                 return
-            elif text in ["روحي", "قلبي", "گلبـي"]:
-                sub_bot.reply_to(msg, "روحه وعمره وكلبي يمه فديته 🥺🤍")
+            elif text in ["روحي", "قلبي", "گلبـي", "عمري"]:
+                sub_bot.reply_to(msg, "روحه وعمره وكلبي يمه فديت هالطاري 🥺🤍")
                 return
-            elif text in ["بوت", "البوت"]:
-                sub_bot.reply_to(msg, "عيون البوت وخدمة للحلوين 🤖🖤")
+            elif text in ["بوت", "البوت", "سجين"]:
+                sub_bot.reply_to(msg, "عيون البوت وخدامة للحلوين، امرني حبيبي 🤖🖤")
                 return
-            elif text in ["منور", "منورين"]:
-                sub_bot.reply_to(msg, "نور عيونك الساطع يا وردة الكروب 🌟")
+            elif text in ["منور", "منورين", "نوركم"]:
+                sub_bot.reply_to(msg, "نور عيونك الساطع يا وردة الكروب العطرة 🌟")
                 return
-            elif text in ["تصبح على خير", "بباي", "مع السلامة"]:
-                sub_bot.reply_to(msg, "وأنت من أهل الخير يا بعد روحي، دير بالك على نفسك 🌙💤")
+            elif text in ["تصبح على خير", "بباي", "مع السلامة", "في امان الله"]:
+                sub_bot.reply_to(msg, "وأنت من أهل الخير يا بعد روحي، دير بالك على نفسك هواي 🌙💤")
+                return
+            elif text in ["احم", "احم احم"]:
+                sub_bot.reply_to(msg, "يا هلا بالشيخ، نورت المكان بطلتك 🦅🖤")
+                return
+            elif text in ["شكرا", "تسلم", "مشكور"]:
+                sub_bot.reply_to(msg, "ولو تدلل عيوني، بخدمتكم دائماً 🤍✨")
+                return
+            elif text in ["صباح الخير", "صباح النور", "صبايا"]:
+                sub_bot.reply_to(msg, "صباح الورد والفل على عيون أطيب ناس ☀️🌸")
+                return
+            elif text in ["مساء الخير", "مساء الورد", "مساء الحب"]:
+                sub_bot.reply_to(msg, "مساء العسل والعيون السود يا غالي 🌙🤍")
+                return
+            elif text in ["وينكم", "ميتين", "الكروب نايم"]:
+                sub_bot.reply_to(msg, "صيحو للشباب خليهم يصحون، الكروب بوجودكم يحلى ⚡🔥")
+                return
+            elif text in ["هههه", "ههههه", "خرب ههه", "هههههههه"]:
+                sub_bot.reply_to(msg, "دوم هالضحكة الفرحانة يا رب، عسى ما تنتهي 😃❤️")
+                return
+            elif text in ["اوف", "اووووف", "ضايج", "مخنوك"]:
+                sub_bot.reply_to(msg, "سلامة گلبك من الضيج يا بعد روحي، شبيها الحلوة تضوج؟ 🥺💔")
+                return
+            elif text in ["شكو ماكو", "كو شي جديد"]:
+                sub_bot.reply_to(msg, "والله كولشي ماكو غير طرياتكم الحلوة بالكروب 🌸")
+                return
+            elif text in ["دوم", "دومك", "تدوم الضحكة"]:
+                sub_bot.reply_to(msg, "تدوم أيامك حلوة وسعيدة يا رب ✨")
+                return
+            elif text in ["اكلكم", "شباب", "بنات"]:
+                sub_bot.reply_to(msg, "گول عوني، سامعينك وكلنا وياك 🖤👂")
+                return
+            elif text in ["تمام", "وكي", "صحيح", "عاشت ايدك"]:
+                sub_bot.reply_to(msg, "عاش من اذكرك، تدلل يا غالي 🤍")
+                return
+            elif text in ["ولك", "ولك سجين", "لك بوت"]:
+                sub_bot.reply_to(msg, "عيون ولَك وروح ولَك، أمرني شتريد؟ 🙈🔥")
+                return
+            elif text in ["حبي", "حبيبي", "عيوني"]:
+                sub_bot.reply_to(msg, "عيون حبيبي وروحه وكلبه أنت 🤍✨")
+                return
+            elif text in ["غوالي", "الغالين", "أعز ناس"]:
+                sub_bot.reply_to(msg, "أنتم تاج راس الكل والله والفخر ليكم 👑")
+                return
+            elif text in ["باي", "يلا باي", "رايح"]:
+                sub_bot.reply_to(msg, "بحفظ الله ورعايته، لا تطول الغيبة عنا 🥀")
+                return
+            elif text in ["شنو السالفة", "شكو"]:
+                sub_bot.reply_to(msg, "ماكو شي، قاعدين نسولف ونشم هواكم الطيب 🍃")
+                return
+            elif text in ["حباب", "فدوة", "ارجوك"]:
+                sub_bot.reply_to(msg, "تامرني أمر، عيوني لك والله 🌸")
+                return
+            elif text in ["عاشت افيكم", "كفو", "عاشت الايادي"]:
+                sub_bot.reply_to(msg, "كفو منك يا ذيب، دائماً مبدع 🐺⚡")
+                return
+            elif text in ["وينك", "مختفي", "صارلك غيبة"]:
+                sub_bot.reply_to(msg, "موجود بقلب الحدث وبخدمتكم طوال الوقت 🤖🖤")
+                return
+            elif text in ["تعبان", "هيلث تعبان", "منتهي"]:
+                sub_bot.reply_to(msg, "سلامة تعبك، ارتاح لك شوية واهتم بنفسك 🛌💤")
+                return
+            elif text in ["اكو أحد", "موجودين"]:
+                sub_bot.reply_to(msg, "اي نعم، البوت والشباب حاضرين لك ⚡")
+                return
+            elif text in ["اكلك", "سجين اسمعني"]:
+                sub_bot.reply_to(msg, "سمعانك وبكل أذان صاغية، تفضل گول 🖤")
+                return
+            elif text in ["عراقي", "العراق", "دارمي", "ابودذية"]:
+                sub_bot.reply_to(msg, "يا دار دار العز يا دار الحبيبة، فديت العراق وأهله 🇮🇶🦅")
+                return
+            elif text in ["نورت الكروب", "نور الكروب بوجودي"]:
+                sub_bot.reply_to(msg, "طبعاً ينور بوجود الأساطير أمثالك 🌟")
+                return
+            elif text in ["شكد عمرك", "مواليدك"]:
+                sub_bot.reply_to(msg, "عمري برمجته على حبكم، يعني شاب طازج 🤖✨")
+                return
+            elif text in ["منين انت", "وين ساكن"]:
+                sub_bot.reply_to(msg, "أنا ابن السورس، وعايش بقلوبكم الطيبة 🤍")
+                return
+            elif text in ["اسمي", "تعرفني"]:
+                sub_bot.reply_to(msg, "أكيد أعرفك، أنت الغالي اللي ما ينعوض 💎")
+                return
+            elif text in ["حبيبتي", "عشيرتي"]:
+                sub_bot.reply_to(msg, "الله يخليكم لبعض ولا يفرقكم أبداً 🌸")
+                return
+            elif text in ["صديقي", "اخوي", "صاحبي"]:
+                sub_bot.reply_to(msg, "نعم الأخ والصديق الوفي بالشدة 🤝🖤")
+                return
+            elif text in ["تحبني", "تحبني لو تقشمرني"]:
+                sub_bot.reply_to(msg, "غير اموت عليك وعلى سوالفك الحلوة 🙈❤️")
+                return
+            elif text in ["كافي", "بطل"]:
+                sub_bot.reply_to(msg, "صار، بعد ما أتحاچى عيونك تدلل 🤐✨")
+                return
+            elif text in ["زعلان", "زعلان منك"]:
+                sub_bot.reply_to(msg, "عفية لا تزعل، رضاك علي يسوى الدنيا وما بيها 🥺🌹")
+                return
+            elif text in ["منو مطورك", "منو صنعك"]:
+                sub_bot.reply_to(msg, "مطوري الأساسي وسيد الوجوه هو الأسطورة `@M_C_67` 👑")
+                return
+            elif text in ["سورس", "سورس سجين"]:
+                sub_bot.reply_to(msg, "سورس سجين الأقوى لحماية الكروبات وتفليش الهكرز 🛡️⚡")
+                return
+            elif text in ["اكل", "جوعان", "تريكت"]:
+                sub_bot.reply_to(msg, "بالهناء والشفاء، لو يمك جان سويتلك أطيب لفة فلافل عراقية 🌯😋")
+                return
+            elif text in ["شربت ججاي", "جاي", "استكان جاي"]:
+                sub_bot.reply_to(msg, "يا سلام، استكان جاي مهيل على الحطب ينسيك تعب اليوم كله ☕🌿")
+                return
+            elif text in ["الحب", "العشق"]:
+                sub_bot.reply_to(msg, "الحب الحقيقي هو وفاء الأصدقاء ونقاء القلوب 🤍")
+                return
+            elif text in ["جمعة مباركة", "الجمعة"]:
+                sub_bot.reply_to(msg, "جمعة مباركة معطرة بذكر الله وبركات النبي محمد (ص) 🕌✨")
+                return
+            elif text in ["باي باي", "مع السلامه", "الى اللقاء"]:
+                sub_bot.reply_to(msg, "في أمان الله وحفظه، نترقب رجعتك بفارغ الصبر يا غالي 👋🖤")
                 return
 
             if text in ["ا", "ايدي"]:
@@ -270,7 +493,7 @@ def run_sub_bot(token):
                     sub_bot.reply_to(msg, f"🔍 **نتائج بحث اليوتيوب:**\nhttps://www.youtube.com/results?search_query={query.replace(' ', '+')}")
                 return
 
-            if text in ["طرد", "كتم", "تقييد"] and is_admin:
+            if (text.startswith("طرد") or text.startswith("كتم") or text.startswith("تقييد")) and is_admin:
                 if msg.reply_to_message:
                     target_user = msg.reply_to_message.from_user
                     try:
@@ -281,13 +504,13 @@ def run_sub_bot(token):
                     except Exception:
                         pass
                     try:
-                        if text == "طرد":
+                        if text.startswith("طرد"):
                             sub_bot.ban_chat_member(chat_id, target_user.id)
                             sub_bot.reply_to(msg, "🥾 **تم طرد العضو بنجاح ⚡**")
-                        elif text == "كتم":
+                        elif text.startswith("كتم"):
                             sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False))
                             sub_bot.reply_to(msg, "🔇 **تم كتم العضو بنجاح ⚡**")
-                        elif text == "تقييد":
+                        elif text.startswith("تقييد"):
                             sub_bot.restrict_chat_member(chat_id, target_user.id, ChatPermissions(can_send_messages=False, can_send_media_messages=False))
                             sub_bot.reply_to(msg, "🔒 **تم تقييد العضو بنجاح ⚡**")
                     except Exception:
@@ -353,7 +576,7 @@ def receive_token_handler(msg):
             f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح حقيقي!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"البوت يعمل الآن بكافة أوامر الحماية والترفيه والردود العامة.",
+            f"البوت يعمل الآن بنظام الهمسات الجديدة وكافة الميزات.",
             reply_markup=success_markup
         )
     except Exception:
