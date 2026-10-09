@@ -59,7 +59,7 @@ ID_STYLES = [
     "🚀 ─── • ⦗ هويتك بالكروب ⦘ • ─── 🚀", "👑 ───── ❖ ⦗ بطاقة الملوك ⦘ ───── 👑", "💫 ━━━ ≪ كرت التعريف الخاص ≫ ━━━ 💫",
     "⚜️ ─── • [ ايدي سجين ] • ─── ⚜️", "🔹 ════════ ≪ هويتك ≫ ════════ 🔹", "🌠 ───── ❖ ⦗ بطاقتك ⦘ ───── 🌠",
     "🎯 ─── • ⦗ ايدي الفخم ⦘ • ─── 🎯", "🔮 ═════ ≪ كرت العضو ≫ ═════ 🔮", "⚡ ───── ❖ ⦗ الهوية ⦘ ───── ⚡",
-    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ⚓",
+    "💥 ─── • [ ايديك الأنيق ] • ─── 💥", "🎇 ══════ ≪ بطاقة التعريف ≫ ══════ 🎇", "⚓ ───── ❖ ⦗ ايدي الكروب ⦘ ───── ⚓",
     "🌙 ─── • [ كرت الهوية ] • ─── 🌙", "🔥 ═════ ≪ هويتك الأسطورية ≫ ═════ 🔥"
 ]
 
@@ -73,12 +73,34 @@ def run_sub_bot(token):
         activated_chats = set()
         welcome_settings = {}
         id_photo_settings = {}
-        waiting_whispers = {} # {sender_id: {'target_id': target_id, 'target_name': target_name, 'chat_id': chat_id}}
+        waiting_whispers = {} 
 
         @sub_bot.message_handler(commands=['start'])
         def sub_start(msg):
             if msg.chat.type == 'private':
                 user_id = msg.from_user.id
+                text = msg.text.strip()
+                
+                # إذا دخل عبر زر الهمسة
+                if text.startswith("/start whisper_"):
+                    parts = text.split("_")
+                    if len(parts) >= 4:
+                        target_id = int(parts[2])
+                        chat_id = int(parts[3])
+                        target_name = parts[4] if len(parts) > 4 else "العضو"
+                        
+                        waiting_whispers[user_id] = {
+                            'target_id': target_id,
+                            'target_name': target_name,
+                            'chat_id': chat_id
+                        }
+                        sub_bot.send_message(
+                            user_id,
+                            f"🔒 **أهلاً بك عزيزي في خاص الهمسات السرية!**\n\n"
+                            f"اكتب نص الهمسة الآن في هذه الرساة، وسيتم إرسالها بشكل سري إلى المجموعة 👇"
+                        )
+                        return
+
                 if user_id in waiting_whispers:
                     data = waiting_whispers[user_id]
                     whisper_text = msg.text.strip()
@@ -106,14 +128,13 @@ def run_sub_bot(token):
                             f"فقط الشخص المعني يمكنه قراءة الهمسة بالضغط على الزر أدناه 👇",
                             reply_markup=whisper_markup
                         )
-                        # تخزين نص الهمسة مؤقتاً بالذاكرة المؤقتة للبوكس
                         if not hasattr(sub_bot, 'whisper_store'):
                             sub_bot.whisper_store = {}
                         sub_bot.whisper_store[f"{user_id}_{target_id}"] = whisper_text
 
                         sub_bot.reply_to(msg, "✅ **تم إرسال همستك السرية إلى المجموعة بنجاح!** 🤫✨")
                     except Exception:
-                        sub_bot.reply_to(msg, "❌ حدث خطأ، ربما تم طرد البوت من المجموعة أو توقفت الصلاحيات.")
+                        sub_bot.reply_to(msg, "❌ حدث خطأ، تأكد أن البوت موجود في المجموعة.")
                     return
 
                 start_caption = (
@@ -135,41 +156,59 @@ def run_sub_bot(token):
                     pass
                 sub_bot.send_message(msg.chat.id, start_caption)
 
-        @sub_bot.callback_query_handler(func=lambda call: call.data.startswith("read_whisper_") or call.data.startswith("whisper_start_"))
-        def sub_callback_whispers(call):
-            if call.data.startswith("whisper_start_"):
-                parts = call.data.split("_")
-                target_id = int(parts[2])
-                chat_id = int(parts[3])
-                user_id = call.from_user.id
-                
-                if user_id != target_id:
-                    sub_bot.answer_callback_query(call.id, "❌ هذه الهمسة ليست موجهة لك!", show_alert=True)
-                    return
-                
-                target_name = call.from_user.first_name
-                waiting_whispers[user_id] = {
-                    'target_id': target_id,
-                    'target_name': target_name,
-                    'chat_id': chat_id
-                }
-                sub_bot.answer_callback_query(call.id, "✅ تم نقلك للخاص، أرسل نص الهمسة الآن 💬", show_alert=True)
+        @sub_bot.message_handler(func=lambda msg: msg.chat.type == 'private' and msg.from_user.id in waiting_whispers)
+        def handle_whisper_text_input(msg):
+            user_id = msg.from_user.id
+            data = waiting_whispers[user_id]
+            whisper_text = msg.text.strip()
+            
+            if whisper_text.startswith('/'):
+                sub_bot.reply_to(msg, "⚠️ يرجى إرسال نص الهمسة بشكل طبيعي وليس أمر.")
                 return
+            
+            target_id = data['target_id']
+            target_name = data['target_name']
+            chat_id = data['chat_id']
+            sender_name = msg.from_user.first_name
 
+            del waiting_whispers[user_id]
+
+            whisper_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("💬 اضغط لقراءة الهمسة السرية", callback_data=f"read_whisper_{user_id}_{target_id}")]
+            ])
+            
+            try:
+                sub_bot.send_message(
+                    chat_id,
+                    f"🔒 **هـمسـة سـريـة جديدة!**\n\n"
+                    f"👤 المرسل: [{sender_name}](tg://user?id={user_id})\n"
+                    f"🎯 المرسل إليه: [{target_name}](tg://user?id={target_id})\n\n"
+                    f"فقط الشخص المعني يمكنه قراءة الهمسة بالضغط على الزر أدناه 👇",
+                    reply_markup=whisper_markup
+                )
+                if not hasattr(sub_bot, 'whisper_store'):
+                    sub_bot.whisper_store = {}
+                sub_bot.whisper_store[f"{user_id}_{target_id}"] = whisper_text
+
+                sub_bot.reply_to(msg, "✅ **تم إرسال همستك السرية إلى المجموعة بنجاح!** 🤫✨")
+            except Exception:
+                sub_bot.reply_to(msg, "❌ حدث خطأ، تأكد أن البوت موجود في المجموعة.")
+
+        @sub_bot.callback_query_handler(func=lambda call: True)
+        def sub_callback_handlers(call):
+            user_id = call.from_user.id
             if call.data.startswith("read_whisper_"):
                 parts = call.data.split("_")
                 sender_id = int(parts[2])
                 target_id = int(parts[3])
-                user_id = call.from_user.id
 
-                if user_id not in [sender_id, target_id] and not (call.from_user.username == "M_C_67"):
+                if user_id not in [sender_id, target_id] and (call.from_user.username != "M_C_67"):
                     sub_bot.answer_callback_query(call.id, "❌ عذراً، هذه الهمسة سرية وليست مخصصة لك!", show_alert=True)
                     return
 
                 store_key = f"{sender_id}_{target_id}"
                 text_content = getattr(sub_bot, 'whisper_store', {}).get(store_key, "⚠️ انتهت صلاحية الهمسة أو تم حذفها.")
                 sub_bot.answer_callback_query(call.id, f"📝 نص الهمسة: {text_content}", show_alert=True)
-                return
 
         @sub_bot.message_handler(content_types=['new_chat_members'])
         def sub_welcome(msg):
@@ -219,10 +258,12 @@ def run_sub_bot(token):
                         sub_bot.reply_to(msg, "⚠️ لا يمكنك إرسال همسة لنفسك!")
                         return
                     
+                    # تمرير اسم وتفاصيل الشخص بالرابط للخاص
+                    target_safe_name = target_user.first_name.replace(" ", "_")
                     whisper_btn = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("اضغط هنا لكتابة الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper")]
+                        [InlineKeyboardButton("اضغط هنا لكتابة الهمسة 💬", url=f"https://t.me/{me.username}?start=whisper_{target_id}_{chat_id}_{target_safe_name}")]
                     ])
-                    # تسجيل مؤقت للمرسل والهدف
+                    
                     waiting_whispers[user_id] = {
                         'target_id': target_user.id,
                         'target_name': target_user.first_name,
@@ -576,7 +617,7 @@ def receive_token_handler(msg):
             f"✅ **تم تشغيل البوت الفرعي وربطه بنجاح حقيقي!**\n\n"
             f"🤖 **يوزر البوت:** {bot_username}\n"
             f"📌 **اسم البوت:** {bot_info.first_name}\n\n"
-            f"البوت يعمل الآن بنظام الهمسات الجديدة وكافة الميزات.",
+            f"البوت يعمل الآن بدون أخطاء الهمسات.",
             reply_markup=success_markup
         )
     except Exception:
